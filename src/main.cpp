@@ -4,6 +4,23 @@
 #include "sender.h"
 
 //----------------------------------------------------------------------------
+/// @fn timestamp
+//----------------------------------------------------------------------------
+std::string timestamp() {
+    const boost::posix_time::ptime now = boost::posix_time::microsec_clock::local_time();
+    const boost::posix_time::ptime utc = boost::posix_time::second_clock::universal_time();
+    const boost::posix_time::ptime local = boost::date_time::c_local_adjustor<boost::posix_time::ptime>::utc_to_local(utc);
+    const boost::posix_time::posix_time_system::time_duration_type td = local - utc;
+    std::ostringstream s;
+    s << boost::posix_time::to_iso_extended_string(now);
+    s.seekp(23); // millisec
+    s << (td.is_negative() ? '-' : '+');
+    s << std::setw(2) << std::setfill('0') << boost::date_time::absolute_value(td.hours()) << ':';
+    s << std::setw(2) << std::setfill('0') << boost::date_time::absolute_value(td.minutes());
+    return s.str();
+}
+
+//----------------------------------------------------------------------------
 /// @class ReflectSender
 //----------------------------------------------------------------------------
 class ReflectSender : public Event {
@@ -27,7 +44,7 @@ public:
         if (sender_->Send(buf)) return true;
         std::string err = sender_->GetErrMsg();
         sender_.reset();
-        std::cout << "send failed [" << name_ << "] for " << peer_ << " : " << err << std::endl;
+        std::cout << timestamp() << ": send failed [" << name_ << "] for " << peer_ << " : " << err << std::endl;
         return false;
     }
 };
@@ -65,7 +82,7 @@ public:
         opt.SetSockOpts(option_, ListenOption::s_sockopts_pre_bind); // "pre-bind" options
         Listener::ptr_t listener(Listener::Create(opt));
         if (!listener->Initialize()) {
-            std::cout << "Listener::Initialize error: " << listener->GetErrMsg() << std::endl;
+            std::cout << timestamp() << ": Listener::Initialize error: " << listener->GetErrMsg() << std::endl;
             return false;
         }
         listener->AddEvent(shared_from_this(), 0, false);
@@ -109,12 +126,12 @@ public:
             opt.SetSockOpts(option_, ReceiveOption::s_sockopts); // "post" options
             receiver = Receiver::Create(sfd, opt);
             if (!receiver->Initialize()) {
-                std::cout << "Receiver::Initialize error: " << receiver->GetErrMsg() << std::endl;
+                std::cout << timestamp() << ": Receiver::Initialize error: " << receiver->GetErrMsg() << std::endl;
                 return false;
             }
             receiver->AddEvent(shared_from_this(), 0);
             receivers_[name] = receiver;
-            std::cout << "accept publish [ " << name << " ] from " << opt["peer"] << std::endl;
+            std::cout << timestamp() << ": accept publish [ " << name << " ] from " << opt["peer"] << std::endl;
             return true;
         } else { // "request"
             Receiver::ptr_t receiver = FindReceiver(name);
@@ -125,14 +142,14 @@ public:
             opt.SetSockOpts(option_, SendOption::s_sockopts); // "post" options
             Event::ptr_t sender(ReflectSender::Create(sfd, opt));
             receiver->AddEvent(sender, 0, true);
-            std::cout << "accept request [ " << name << " ] from " << opt["peer"] << std::endl;
+            std::cout << timestamp() << ": accept request [ " << name << " ] from " << opt["peer"] << std::endl;
             return true;
         }
     }
     virtual bool OnDisconnected(const ReceiveOption& option) {
         std::string name = option.Get<std::string>("name");
         std::string peer = option.Get<std::string>("peer");
-        std::cout << "disconnected [" << name << "] from " << peer << std::endl;
+        std::cout << timestamp() << ": disconnected [" << name << "] from " << peer << std::endl;
         for (Receiver::map_t::iterator it = receivers_.find(name); it != receivers_.end(); ++it) {
             if (it->second) {
                 boost::thread([](Receiver::ptr_t receiver) { receiver.reset(); }, it->second);
@@ -193,11 +210,11 @@ public:
                 if (reflect->Initialize()) reflects_.push_back(reflect);
             }
         } catch (std::exception& ex) {
-            std::cout << "ERROR: " << "failed to read conf: " << ex.what() << std::endl;
+            std::cout << timestamp() << ": ERROR: " << "failed to read conf: " << ex.what() << std::endl;
             return -2;
         }
         if (reflects_.empty()) {
-            std::cout << "ERROR: " << "there are no reflection entry" << std::endl;
+            std::cout << timestamp() << ": ERROR: " << "there are no reflection entry" << std::endl;
             return -1;
         }
 #ifdef SIGBREAK
@@ -211,30 +228,30 @@ public:
     }
 protected:
     static void signalHandler(int signum) {
-        std::cout << "signal : " << signum << std::endl;
+        std::cout << timestamp() << ": signal : " << signum << std::endl;
         boost::unique_lock<boost::mutex> lk(mutex_);
         cond_.notify_all();
     }
     static void logHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message) {
         switch (level) {
             case srt_logging::LogLevel::fatal: {
-                std::cout << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "fatal" % message).str();
+                std::cout << timestamp() << ": " << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "fatal" % message).str();
                 break;
             }
             case srt_logging::LogLevel::error: {
-                std::cout << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "error" % message).str();
+                std::cout << timestamp() << ": " << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "error" % message).str();
                 break;
             }
             case srt_logging::LogLevel::warning: {
-                std::cout << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % " warn" % message).str();
+                std::cout << timestamp() << ": " << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % " warn" % message).str();
                 break;
             }
             case srt_logging::LogLevel::note: {
-                std::cout << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % " note" % message).str();
+                std::cout << timestamp() << ": " << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % " note" % message).str();
                 break;
             }
             case srt_logging::LogLevel::debug: {
-                std::cout << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "debug" % message).str();
+                std::cout << timestamp() << ": " << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "debug" % message).str();
                 break;
             }
         }
@@ -261,7 +278,7 @@ int main(int argc, char* argv[]) {
         }
         return app.Run(conf_file);
     } catch (std::exception& x) {
-        std::cout << "exception : " << x.what() << std::endl;
+        std::cout << timestamp() << ": exception : " << x.what() << std::endl;
         return -3;
     }
 }
