@@ -168,12 +168,34 @@ public:
     virtual void Destroy() {
         srt_cleanup();
     }
-    virtual int Run() {
-        URIOption option;
-        option["host"] = "";
-        option["port"] = "14501";
-        Reflect::ptr_t reflect = Reflect::Create(option);
-        if (reflect->Initialize()) reflects_.push_back(reflect);
+    virtual int Run(const std::string& conf_file) {
+        try {
+            boost::property_tree::ptree conf;
+            boost::property_tree::read_json(conf_file, conf);
+            boost::property_tree::ptree it = conf.get_child("reflects");
+            for (boost::property_tree::ptree::const_iterator it2 = it.begin(); it2 != it.end(); ++it2) {
+                boost::optional<std::string> u = it2->second.get_optional<std::string>("URI");
+                URIOption option;
+                if (u) {
+                    URI uri(u.get());
+                    std::string q = uri.query;
+                    uri.Decode();
+                    if (boost::iequals(uri.scheme, "srt")) {
+                        option = q;
+                        option["host"] = uri.host;
+                        option["port"] = uri.port;
+                    }
+                }
+                for (boost::property_tree::ptree::const_iterator it3 = it2->second.begin(); it3 != it2->second.end(); ++it3) {
+                    option[it3->first] = it3->second.data();
+                }
+                Reflect::ptr_t reflect = Reflect::Create(option);
+                if (reflect->Initialize()) reflects_.push_back(reflect);
+            }
+        } catch (std::exception& ex) {
+            std::cout << "ERROR: " << "failed to read conf: " << ex.what() << std::endl;
+            return -2;
+        }
         if (reflects_.empty()) {
             std::cout << "ERROR: " << "there are no reflection entry" << std::endl;
             return -1;
@@ -222,14 +244,24 @@ protected:
 boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
-int main() {
+int main(int argc, char* argv[]) {
     try {
+        std::string conf_file;
+        for (int i = 1; i < argc; ++i) {
+            if (boost::istarts_with(argv[i], "conf=")) {
+                conf_file = std::string(argv[i]).substr(5);
+            }
+        }
+        if (conf_file.empty()) {
+            conf_file = std::string(argv[0]) + ".conf";
+        }
         App app;
         if (!app.Initialize()) {
             return 1;
         }
-        return app.Run();
+        return app.Run(conf_file);
     } catch (std::exception& x) {
         std::cout << "exception : " << x.what() << std::endl;
+        return -3;
     }
 }
