@@ -55,6 +55,15 @@ void ListenOption::SetSockOpts(const URIOption& option, const char* sockopts[]) 
 //----------------------------------------------------------------------------
 //
 //----------------------------------------------------------------------------
+void ListenOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    for (int i = 0; sockopts[i]; ++i) {
+        std::string value = option[sockopts[i]].to<std::string>();
+        if (!value.empty()) operator[](sockopts[i]) = value;
+    }
+}
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
 const char* CallOption::s_sockopts[] = {
     "udpsndbuf", "udprcvbuf",
     "transtype", "pbkeylen", "passphrase", "mss", "fc", "sndbuf", "rcvbuf", "rcvsyn", "linger", "ipttl", "iptos",
@@ -69,6 +78,15 @@ void CallOption::SetSockOpts(const URIOption& option, const char* sockopts[]) {
     for (int i = 0; sockopts[i]; ++i) {
         if (!option.Has(sockopts[i])) continue;
         operator[](sockopts[i]) = option.Get<std::string>(sockopts[i]);
+    }
+}
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
+void CallOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    for (int i = 0; sockopts[i]; ++i) {
+        std::string value = option[sockopts[i]].to<std::string>();
+        if (!value.empty()) operator[](sockopts[i]) = value;
     }
 }
 //----------------------------------------------------------------------------
@@ -108,6 +126,15 @@ void ReceiveOption::SetSockOpts(const URIOption& option, const char* sockopts[])
 //----------------------------------------------------------------------------
 //
 //----------------------------------------------------------------------------
+void ReceiveOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    for (int i = 0; sockopts[i]; ++i) {
+        std::string value = option[sockopts[i]].to<std::string>();
+        if (!value.empty()) operator[](sockopts[i]) = value;
+    }
+}
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
 const char* SendOption::s_sockopts[] = {
     "maxbw", "inputbw", "oheadbw", "rcvtimeo", "sndtimeo", "sndsyn",
 #if SRT_VERSION_VALUE >= SRT_MAKE_VERSION_VALUE(1,4,3)
@@ -122,6 +149,15 @@ void SendOption::SetSockOpts(const URIOption& option, const char* sockopts[]) {
     for (int i = 0; sockopts[i]; ++i) {
         if (!option.Has(sockopts[i])) continue;
         operator[](sockopts[i]) = option.Get<std::string>(sockopts[i]);
+    }
+}
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
+void SendOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    for (int i = 0; sockopts[i]; ++i) {
+        std::string value = option[sockopts[i]].to<std::string>();
+        if (!value.empty()) operator[](sockopts[i]) = value;
     }
 }
 

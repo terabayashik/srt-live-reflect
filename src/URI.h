@@ -59,9 +59,10 @@ public:
 //----------------------------------------------------------------------------
 class URIOption : public URIUtil
 {
-protected:
+public:
     struct comp { bool operator()(const std::string& l, const std::string& r) const; };
     typedef std::map<std::string, std::string, comp> map_t;
+protected:
     map_t map_;
     map_t synonym_;
     const std::string& actualKey(const std::string& key) const;

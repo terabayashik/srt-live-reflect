@@ -2,6 +2,8 @@
 #include "listener.h"
 #include "receiver.h"
 #include "sender.h"
+#include "json.h"
+#include "curl.h"
 
 //----------------------------------------------------------------------------
 /// @fn timestamp
@@ -23,7 +25,7 @@ std::string timestamp() {
 //----------------------------------------------------------------------------
 /// @class ReflectSender
 //----------------------------------------------------------------------------
-class ReflectSender : public Event {
+class ReflectSender : public Event, private boost::noncopyable {
     Sender::ptr_t sender_;
     std::string name_;
     std::string peer_;
@@ -39,6 +41,7 @@ public:
     virtual ~ReflectSender() {
         sender_.reset();
     }
+protected:
     bool OnReceive(const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
         if (!sender_) return false;
         if (sender_->Send(buf)) return true;
@@ -54,11 +57,12 @@ public:
 //----------------------------------------------------------------------------
 class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, private boost::noncopyable
 {
-    URIOption option_;
+    const Json option_;
+    Curl curl_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
 protected:
-    Reflect(URIOption option) : Event(), option_(option), listener_(), receivers_() {
+    Reflect(const Json& option) : Event(), option_(option), curl_(), listener_(), receivers_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
         const Receiver::map_t::const_iterator it = receivers_.find(name);
@@ -67,7 +71,7 @@ protected:
 public:
     typedef boost::shared_ptr<Reflect> ptr_t;
     typedef std::vector<ptr_t> vector_t;
-    static ptr_t Create(const URIOption& option) {
+    static ptr_t Create(const Json& option) {
         return ptr_t(new Reflect(option));
     }
     virtual ~Reflect() {
@@ -75,10 +79,10 @@ public:
     }
     virtual bool Initialize() {
         ListenOption opt;
-        opt["host"] = option_.Get<std::string>("host");
-        opt["port"] = option_.Get<std::string>("port");
-        opt["backlog"] = option_.Get<std::string>("backlog", "10");
-        opt["epolltimeo"] = option_.Get<std::string>("epolltimeo", "100");
+        opt["host"] = option_["host"].to<std::string>();
+        opt["port"] = option_["port"].to<std::string>();
+        opt["backlog"] = option_["backlog"].to<std::string>("10");
+        opt["epolltimeo"] = option_["epolltimeo"].to<std::string>("100");
         opt.SetSockOpts(option_, ListenOption::s_sockopts_pre_bind); // "pre-bind" options
         Listener::ptr_t listener(Listener::Create(opt));
         if (!listener->Initialize()) {
@@ -93,6 +97,44 @@ public:
         receivers_.clear();
         listener_.reset();
     }
+protected:
+    typedef std::pair<bool, Json> res_t;
+    virtual CURLcode Call(const std::string& uri, Json& body) {
+        CurlJsonIO io(curl_);
+        io.Reset(5, body);
+        curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
+        CURLcode res = curl_easy_perform(io);
+//#ifdef _DEBUG
+//        std::cout << "res: " << res << " body: " << io.Body() << std::endl;
+//#endif
+        if (res == CURLE_OK) {
+            body = io.Json();
+//#ifdef _DEBUG
+//            Json::keys_t keys = body.to<Json::keys_t>();
+//            std::for_each(keys.begin(), keys.end(), [&body](const std::string& key) {
+//                std::cout << key << " : " << body[key].to<std::string>();
+//            });
+//#endif
+        } else {
+            body = Json();
+        }
+        return res;
+    }
+    virtual res_t Authorize(const std::string& on, const std::string& call, const std::string& addr, const StreamOption& streamOption) {
+        std::string uri = option_[on]["on_" + call].to<std::string>();
+        if (uri.empty()) return std::make_pair(true, Json());
+        Json body;
+        body["app"] = option_["app"].to<std::string>("live").c_str();
+        body["on"] = on.c_str();
+        body["call"] = call.c_str();
+        body["addr"] = addr.c_str();
+        const URIOption::map_t map = streamOption.GetMap();
+        for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
+            body["streamid"][it->first] = it->second.c_str();
+        }
+        CURLcode res = Call(uri, body);
+        return std::make_pair(res == CURLE_OK, body);
+    }
     virtual bool OnPreAccept(ListenOption& option, int sfd, const SockAddr& peer, const StreamOption& streamOption) {
         std::string name = streamOption.ResourceName();
         if (name.empty()) {
@@ -102,12 +144,18 @@ public:
         } else if (streamOption.Mode() == "publish") {
             Receiver::ptr_t receiver = FindReceiver(name);
             if (receiver) return false; // already exists
+            res_t res = Authorize("on_pre_accept", "publish", peer.ToString(), streamOption);
+            if (!res.first) return false;
             option.SetSockOpts(option_, ListenOption::s_sockopts_pre); // "pre" options
+            option.SetSockOpts(res.second, ListenOption::s_sockopts_pre);
             return true;
         } else { // "request"
             Receiver::ptr_t receiver = FindReceiver(name);
             if (!receiver) return false; // not exists
+            res_t res = Authorize("on_pre_accept", "play", peer.ToString(), streamOption);
+            if (!res.first) return false;
             option.SetSockOpts(option_, ListenOption::s_sockopts_pre); // "pre" options
+            option.SetSockOpts(res.second, ListenOption::s_sockopts_pre);
             return true;
         }
     }
@@ -123,7 +171,10 @@ public:
             ReceiveOption opt;
             opt["name"] = name;
             opt["peer"] = peer.ToString();
+            res_t res = Authorize("on_accept", "publish", peer.ToString(), streamOption);
+            if (!res.first) return false;
             opt.SetSockOpts(option_, ReceiveOption::s_sockopts); // "post" options
+            opt.SetSockOpts(res.second, ReceiveOption::s_sockopts);
             receiver = Receiver::Create(sfd, opt);
             if (!receiver->Initialize()) {
                 std::cout << timestamp() << ": Receiver::Initialize error: " << receiver->GetErrMsg() << std::endl;
@@ -139,7 +190,9 @@ public:
             SendOption opt;
             opt["name"] = name;
             opt["peer"] = peer.ToString();
+            res_t res = Authorize("on_accept", "publish", peer.ToString(), streamOption);
             opt.SetSockOpts(option_, SendOption::s_sockopts); // "post" options
+            opt.SetSockOpts(res.second, SendOption::s_sockopts);
             Event::ptr_t sender(ReflectSender::Create(sfd, opt));
             receiver->AddEvent(sender, 0, true);
             std::cout << timestamp() << ": accept request [ " << name << " ] from " << opt["peer"] << std::endl;
@@ -187,30 +240,25 @@ public:
     }
     virtual int Run(const std::string& conf_file) {
         try {
-            boost::property_tree::ptree conf;
-            boost::property_tree::read_json(conf_file, conf);
-            boost::property_tree::ptree it = conf.get_child("reflects");
-            for (boost::property_tree::ptree::const_iterator it2 = it.begin(); it2 != it.end(); ++it2) {
-                boost::optional<std::string> u = it2->second.get_optional<std::string>("URI");
-                URIOption option;
-                if (u) {
-                    URI uri(u.get());
-                    std::string q = uri.query;
+            Json conf = Json::load(conf_file);
+            Json::Node reflects = conf["reflects"];
+            for (size_t i = 0, c = reflects.size(); i < c; ++i) {
+                Json option = reflects[i];
+                Json::keys_t keys = option.to<Json::keys_t>();
+                for (Json::keys_t::const_iterator it = keys.begin(); it != keys.end(); ++it) {
+                    if (!boost::iequals(*it, "uri")) continue;
+                    URI uri = option[*it].to<std::string>();
+                    if (!boost::iequals(uri.scheme, "srt")) continue;
+                    URIOption query = uri.query;
                     uri.Decode();
-                    if (boost::iequals(uri.scheme, "srt")) {
-                        option = q;
-                        option["host"] = uri.host;
-                        option["port"] = uri.port;
-                    }
-                }
-                for (boost::property_tree::ptree::const_iterator it3 = it2->second.begin(); it3 != it2->second.end(); ++it3) {
-                    option[it3->first] = it3->second.data();
+                    option["host"] = uri.host.c_str();
+                    option["port"] = uri.port.c_str();
                 }
                 Reflect::ptr_t reflect = Reflect::Create(option);
                 if (reflect->Initialize()) reflects_.push_back(reflect);
             }
         } catch (std::exception& ex) {
-            std::cout << timestamp() << ": ERROR: " << "failed to read conf: " << ex.what() << std::endl;
+            std::cout << timestamp() << ": ERROR: " << "failed to read conf [ " << conf_file << "] : " << ex.what() << std::endl;
             return -2;
         }
         if (reflects_.empty()) {

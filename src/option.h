@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "URI.h"
+#include "json.h"
 
 //----------------------------------------------------------------------------
 /// @class ListenOption
@@ -14,6 +15,7 @@ public:
     ListenOption() : URIOption() { operator[]("rcvsyn") = "0"; } // NON_BLOCKING
     virtual bool operator==(const ListenOption& rhs) const; // "host", "port"
     virtual void SetSockOpts(const URIOption& option, const char* sockopts[]);
+    virtual void SetSockOpts(const Json& option, const char* sockopts[]);
 };
 //----------------------------------------------------------------------------
 /// @class CallOption
@@ -25,6 +27,7 @@ public:
     static const char* s_sockopts[];
     CallOption() : URIOption() {}
     virtual void SetSockOpts(const URIOption& option, const char* sockopts[]);
+    virtual void SetSockOpts(const Json& option, const char* sockopts[]);
 };
 //----------------------------------------------------------------------------
 /// @class ReceiveOption
@@ -37,6 +40,7 @@ public:
     ReceiveOption() : URIOption() { operator[]("rcvsyn") = "0"; } // NON_BLOCKING
     virtual bool operator==(const ReceiveOption& rhs) const; // compare for "streamname"
     virtual void SetSockOpts(const URIOption& option, const char* sockopts[]);
+    virtual void SetSockOpts(const Json& option, const char* sockopts[]);
 };
 //----------------------------------------------------------------------------
 /// @class SendOption
@@ -48,6 +52,7 @@ public:
     static const char* s_sockopts[];
     SendOption() : URIOption() { operator[]("sndsyn") = "0"; } // NON_BLOCKING
     virtual void SetSockOpts(const URIOption& option, const char* sockopts[]);
+    virtual void SetSockOpts(const Json& option, const char* sockopts[]);
 };
 //----------------------------------------------------------------------------
 /// @class StreamOption
