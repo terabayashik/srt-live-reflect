@@ -136,7 +136,16 @@ Json Json::load(const std::string& path) {
     boost::json::stream_parser parser(boost::json::storage_ptr(), opt);
     std::ifstream file(path);
     std::string line;
-    while (std::getline(file, line)) parser.write(line + "\n");
+    bool first = true;
+    while (std::getline(file, line)) {
+        if (first) {
+            first = false;
+            if (line.length() >= 3 && static_cast<uint8_t>(line[0]) == 0xef && static_cast<uint8_t>(line[1]) == 0xbb && static_cast<uint8_t>(line[2]) == 0xbf) {
+                line = line.substr(3); // remove utf-8 BOM
+            }
+        }
+        parser.write(line + "\n");
+    }
     parser.finish();
     return Json(parser.release());
 }

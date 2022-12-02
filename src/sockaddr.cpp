@@ -158,3 +158,37 @@ bool SockAddr::ConvertV4MappedV6ToV4() {
     memcpy(static_cast<sockaddr_storage*>(this), &sin, sizeof(sockaddr_in));
     return true;
 }
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
+bool SockAddr::Match(const std::string& condition) const {
+    const size_t pos = condition.find_first_of('/');
+    SockAddr addr(condition.substr(0, pos).c_str(), nullptr);
+    if (addr.ss_family != ss_family) return false;
+    int32_t len = -1;
+    if (pos != std::string::npos) {
+        try {
+            len = boost::lexical_cast<int32_t>(condition.substr(pos + 1));
+        } catch (boost::bad_lexical_cast&) {
+            return false;
+        }
+    }
+    if (ss_family == AF_INET) {
+        if (len < 0) len = 32;
+        if (len == 0) return true;
+        uint32_t mask = (len < 32) ? (0xffffffffu << (32 - len)) : 0xffffffffu;
+        return (htonl(reinterpret_cast<const sockaddr_in*>(this)->sin_addr.s_addr) & mask)
+            == (htonl(reinterpret_cast<const sockaddr_in*>(&addr)->sin_addr.s_addr) & mask);
+    } else if (ss_family == AF_INET6) {
+        if (len < 0) len = 128;
+        const uint8_t* octet1 = reinterpret_cast<const sockaddr_in6*>(this)->sin6_addr.s6_addr;
+        const uint8_t* octet2 = reinterpret_cast<const sockaddr_in6*>(&addr)->sin6_addr.s6_addr;
+        for (int32_t c = 16; c && len > 0; --c, ++octet1, ++octet2, len -= 8) {
+            uint8_t mask = (len < 8) ? (0xffu << (8 - len)) : 0xffu;
+            if ((*octet1 & mask) != (*octet2 & mask)) return false;
+        }
+        return true;
+    } else {
+        return false;
+    }
+}

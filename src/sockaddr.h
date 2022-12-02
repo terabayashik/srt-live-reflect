@@ -24,4 +24,5 @@ public:
     bool IsV6() const { return this->ss_family == AF_INET6; }
     bool IsV4MappedV6() const { return this->ss_family == AF_INET6 && IN6_IS_ADDR_V4MAPPED(&reinterpret_cast<const sockaddr_in6*>(this)->sin6_addr); }
     bool ConvertV4MappedV6ToV4();
+    bool Match(const std::string& condition) const;
 };

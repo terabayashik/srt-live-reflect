@@ -339,5 +339,9 @@ bool CurlJsonIO::Reset(long timeout, const boost::json::value& data) {
 //
 //----------------------------------------------------------------------------
 boost::json::value CurlJsonIO::Json() {
-    return boost::json::parse(Body());
+    try {
+        return boost::json::parse(Body());
+    } catch (boost::system::system_error&) {
+        return boost::json::value();
+    }
 }
