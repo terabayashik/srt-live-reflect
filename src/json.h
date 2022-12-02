@@ -19,7 +19,7 @@ public:
         Node operator[](size_t idx);
         const Node operator[](const std::string& name) const;
         const Node operator[](size_t idx) const;
-        size_t size() const { return (undefined() || !value_->is_array()) ? 0 : value_->as_array().size(); }
+        size_t size() const { return (!value_ || !value_->is_array()) ? 0 : value_->as_array().size(); }
         bool undefined() const { return !value_; }
         boost::json::value to_value() const { return value_ ? *value_ : boost::json::value(); }
         std::string to_string() const { return value_ ? boost::json::serialize(*value_) : ""; }
@@ -27,7 +27,7 @@ public:
     };
 public:
     typedef std::vector<std::string> keys_t;
-    Json(boost::json::value value = boost::json::value()) : boost::json::value(value) {}
+    Json(const boost::json::value& value = boost::json::value()) : boost::json::value(value) {}
     Json(const Node& node) : boost::json::value(node.to_value()) {}
     Json& operator=(const boost::json::value& value) { *static_cast<boost::json::value*>(this) = value; return *this; }
     Node operator[](const std::string& name) { return Node(this)[name]; }

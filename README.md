@@ -13,6 +13,7 @@ reflect srt live stream
 
 ## conf
 ### srt-live-stream.conf
+* allow c style, c++ style comment and trailing commas
 ```json
 {
   "name": "srt-live-reflect",

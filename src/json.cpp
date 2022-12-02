@@ -49,29 +49,29 @@ Json::Node& Json::Node::operator=(const boost::json::value& value) {
 Json::Node Json::Node::operator[](const std::string& name) {
     path_t path = path_;
     path.push_back(Path{ name, static_cast<size_t>(-1) });
-    if (undefined() || !value_->is_object()) return Node(path, root_, nullptr);
+    if (!value_ || !value_->is_object()) return Node(path, root_, nullptr);
     return Node(path, root_, value_->as_object().if_contains(name));
 }
 
 Json::Node Json::Node::operator[](size_t idx) {
     path_t path = path_;
     path.push_back(Path{ "", idx });
-    if (undefined() || !value_->is_array()) return Node(path, root_, nullptr);
+    if (!value_ || !value_->is_array()) return Node(path, root_, nullptr);
     return Node(path, root_, value_->as_array().if_contains(idx));
 }
 
 const Json::Node Json::Node::operator[](const std::string& name) const {
-    if (undefined() || !value_->is_object()) return Node(path_t(), nullptr, nullptr);
+    if (!value_ || !value_->is_object()) return Node(path_t(), nullptr, nullptr);
     return Node(path_t(), nullptr, value_->as_object().if_contains(name));
 }
 
 const Json::Node Json::Node::operator[](size_t idx) const {
-    if (undefined() || !value_->is_array()) return Node(path_t(), nullptr, nullptr);
+    if (!value_ || !value_->is_array()) return Node(path_t(), nullptr, nullptr);
     return Node(path_t(), nullptr, value_->as_array().if_contains(idx));
 }
 
 template <typename Type> Type Json::Node::to(const Type& defVal) const {
-    if (undefined() || value_->is_null()) return defVal;
+    if (!value_ || value_->is_null()) return defVal;
     if (value_->is_int64()) return static_cast<Type>(value_->as_int64());
     if (value_->is_uint64()) return static_cast<Type>(value_->as_uint64());
     if (value_->is_double()) return static_cast<Type>(value_->as_double());
@@ -85,7 +85,7 @@ template <typename Type> Type Json::Node::to(const Type& defVal) const {
 }
 
 template <> std::string Json::Node::to(const std::string& defVal) const {
-    if (undefined() || value_->is_null()) return defVal;
+    if (!value_ || value_->is_null()) return defVal;
     if (value_->is_string()) return value_->as_string().data();
     try {
         if (value_->is_int64()) return boost::lexical_cast<std::string>(value_->as_int64());
@@ -99,7 +99,7 @@ template <> std::string Json::Node::to(const std::string& defVal) const {
 }
 
 template <> Json::keys_t Json::Node::to(const keys_t& defVal) const {
-    if (undefined() || !value_->is_object()) return defVal;
+    if (!value_ || !value_->is_object()) return defVal;
     const boost::json::object& obj = value_->as_object();
     keys_t keys;
     for (boost::json::object::const_iterator it = obj.begin(); it != obj.end(); ++it) {

@@ -90,6 +90,8 @@ public:
         Destroy();
     }
     virtual bool Initialize() {
+        stats_ = conf_["publish"]["stats"].to<int32_t>(0);
+        stats_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(stats_);
         ListenOption opt;
         opt["host"] = conf_["host"].to<std::string>();
         opt["port"] = conf_["port"].to<std::string>();
@@ -104,8 +106,6 @@ public:
         listener->AddEvent(shared_from_this(), 0, false);
         listener_.swap(listener);
         std::cout << prefix(app()) << "listen " << opt["host"] << ":" << opt["port"] << std::endl;
-        stats_ = conf_["publish"]["stats"].to<int32_t>(0);
-        stats_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(stats_);
         return true;
     }
     virtual void Destroy() {
