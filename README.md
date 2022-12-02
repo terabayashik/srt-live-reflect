@@ -10,6 +10,7 @@ reflect srt live stream
 ## args
 ### conf=*{{path to conf file}}*
   * **default** : *{{excecutable path}}* + *".conf"*
+### cainfo=*{{path to certificate authority (CA) bundle}}*
 
 ## conf
 ### srt-live-stream.conf

@@ -295,6 +295,7 @@ public:
         return true;
     }
     virtual void Destroy() {
+        reflects_.clear();
         srt_cleanup();
     }
     virtual int Run(const std::string& conf_file) {
@@ -378,6 +379,8 @@ int main(int argc, char* argv[]) {
         for (int i = 1; i < argc; ++i) {
             if (boost::istarts_with(argv[i], "conf=")) {
                 conf_file = std::string(argv[i]).substr(5);
+            } else if (boost::istarts_with(argv[i], "cainfo=")) {
+                CurlGlobal::SetCertificateAuthority(argv[i] + 7);
             }
         }
         if (conf_file.empty()) {
