@@ -136,7 +136,7 @@ Json Json::load(const std::string& path) {
     boost::json::stream_parser parser(boost::json::storage_ptr(), opt);
     std::ifstream file(path);
     std::string line;
-    while (std::getline(file, line)) parser.write(line);
+    while (std::getline(file, line)) parser.write(line + "\n");
     parser.finish();
     return Json(parser.release());
 }
