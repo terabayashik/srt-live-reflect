@@ -56,6 +56,7 @@ void ListenOption::SetSockOpts(const URIOption& option, const char* sockopts[]) 
 //
 //----------------------------------------------------------------------------
 void ListenOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    if (!option.is_object()) return;
     for (int i = 0; sockopts[i]; ++i) {
         std::string value = option[sockopts[i]].to<std::string>();
         if (!value.empty()) operator[](sockopts[i]) = value;
@@ -84,6 +85,7 @@ void CallOption::SetSockOpts(const URIOption& option, const char* sockopts[]) {
 //
 //----------------------------------------------------------------------------
 void CallOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    if (!option.is_object()) return;
     for (int i = 0; sockopts[i]; ++i) {
         std::string value = option[sockopts[i]].to<std::string>();
         if (!value.empty()) operator[](sockopts[i]) = value;
@@ -127,6 +129,7 @@ void ReceiveOption::SetSockOpts(const URIOption& option, const char* sockopts[])
 //
 //----------------------------------------------------------------------------
 void ReceiveOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    if (!option.is_object()) return;
     for (int i = 0; sockopts[i]; ++i) {
         std::string value = option[sockopts[i]].to<std::string>();
         if (!value.empty()) operator[](sockopts[i]) = value;
@@ -155,6 +158,7 @@ void SendOption::SetSockOpts(const URIOption& option, const char* sockopts[]) {
 //
 //----------------------------------------------------------------------------
 void SendOption::SetSockOpts(const Json& option, const char* sockopts[]) {
+    if (!option.is_object()) return;
     for (int i = 0; sockopts[i]; ++i) {
         std::string value = option[sockopts[i]].to<std::string>();
         if (!value.empty()) operator[](sockopts[i]) = value;
