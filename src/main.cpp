@@ -71,8 +71,10 @@ class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, pr
     Curl curl_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
+    int32_t stats_;
+    std::chrono::steady_clock::time_point stats_time_;
 protected:
-    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), listener_(), receivers_() {
+    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), listener_(), receivers_(), stats_(0), stats_time_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
         const Receiver::map_t::const_iterator it = receivers_.find(name);
@@ -102,6 +104,8 @@ public:
         listener->AddEvent(shared_from_this(), 0, false);
         listener_.swap(listener);
         std::cout << prefix(app()) << "listen " << opt["host"] << ":" << opt["port"] << std::endl;
+        stats_ = conf_["publish"]["stats"].to<int32_t>(0);
+        stats_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(stats_);
         return true;
     }
     virtual void Destroy() {
@@ -240,6 +244,19 @@ protected:
             std::cout << prefix(app()) << "accept request [ " << name << " ] from " << opt["peer"] << std::endl;
             return true;
         }
+    }
+    virtual bool OnListenerFlag(const ListenOption& option) override {
+        for (Receiver::map_t::const_iterator it = receivers_.begin(); it != receivers_.end(); ++it) {
+            Receiver::ptr_t receiver = it->second;
+            std::string name = receiver->GetOption().Get<std::string>("name");
+            std::string stats = receiver->GetStatistics(1, ", ");
+            std::cout << prefix(app()) << "stats receive [ " << name << " ] : " << stats << std::endl;
+        }
+        stats_time_ += std::chrono::seconds(stats_);
+        return false;
+    }
+    virtual bool GetListenerFlag() const override {
+        return stats_ > 0 && std::chrono::steady_clock::now() > stats_time_;
     }
     virtual bool OnDisconnected(const ReceiveOption& option) override {
         std::string name = option.Get<std::string>("name");

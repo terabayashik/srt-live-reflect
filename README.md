@@ -25,11 +25,12 @@ reflect srt live stream
       "udprcvbuf": 65536
     },
     "publish": {
+      "stats": 60, // period to print statistics in seconds (0: disabled)
       "option": { // srt options for publish
         "linger": 0
       },
       "access": [ // static access control for publish
-        {"allow":"192.168.11.0/24", "name":"stream-*"}, // allow publish with streamid "#!::r=stream-xxx" from 192.168.11.0/24
+        {"allow":"192.168.11.0/24", "name":"stream-*"}, // allow publish with streamid "#!::r=stream-xxx,m=publish" from 192.168.11.0/24
         {"deny":"all"} // deny all others
       ],
       "on_pre_accept": "http://127.0.0.1:8090/on_pre_accept_publish",
@@ -51,6 +52,9 @@ reflect srt live stream
   }]
 }
 ```
+
+## option
+[SRT API Socket Options](https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md)
 
 ## streamid
 [SRT Access Control (Stream ID) Guidelines](https://github.com/Haivision/srt/blob/master/docs/features/access-control.md)
