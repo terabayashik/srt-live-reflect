@@ -71,12 +71,14 @@ class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, pr
     Curl curl_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
+    mutable boost::mutex mutex_;
     int32_t stats_;
     std::chrono::steady_clock::time_point stats_time_;
 protected:
-    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), listener_(), receivers_(), stats_(0), stats_time_() {
+    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
+        boost::mutex::scoped_lock lock(mutex_);
         const Receiver::map_t::const_iterator it = receivers_.find(name);
         return it == receivers_.end() ? Receiver::ptr_t() : it->second;
     }
@@ -224,6 +226,7 @@ protected:
                 return false;
             }
             receiver->AddEvent(shared_from_this(), 0);
+            boost::mutex::scoped_lock lock(mutex_);
             receivers_[name] = receiver;
             std::cout << prefix(app()) << "accept publish [ " << name << " ] from " << opt["peer"] << std::endl;
             return true;
@@ -246,8 +249,10 @@ protected:
         }
     }
     virtual bool OnListenerFlag(const ListenOption& option) override {
+        boost::mutex::scoped_lock lock(mutex_);
         for (Receiver::map_t::const_iterator it = receivers_.begin(); it != receivers_.end(); ++it) {
             Receiver::ptr_t receiver = it->second;
+            if (!it->second) continue;
             std::string name = receiver->GetOption().Get<std::string>("name");
             std::string stats = receiver->GetStatistics(1, ", ");
             std::cout << prefix(app()) << "stats receive [ " << name << " ] : " << stats << std::endl;
@@ -262,11 +267,11 @@ protected:
         std::string name = option.Get<std::string>("name");
         std::string peer = option.Get<std::string>("peer");
         std::cout << prefix(app()) << "disconnected [" << name << "] from " << peer << std::endl;
-        for (Receiver::map_t::iterator it = receivers_.find(name); it != receivers_.end(); ++it) {
-            if (it->second) {
-                boost::thread([](Receiver::ptr_t receiver) { receiver.reset(); }, it->second);
-                it->second.reset();
-            }
+        boost::mutex::scoped_lock lock(mutex_);
+        Receiver::map_t::iterator it = receivers_.find(name);;
+        if (it != receivers_.end() && it->second) {
+            boost::thread([](Receiver::ptr_t receiver) { receiver.reset(); }, it->second);
+            it->second.reset();
         }
         return true;
     }
@@ -378,7 +383,7 @@ int main(int argc, char* argv[]) {
         std::string conf_file;
         for (int i = 1; i < argc; ++i) {
             if (boost::istarts_with(argv[i], "conf=")) {
-                conf_file = std::string(argv[i]).substr(5);
+                conf_file = std::string(argv[i] + 5);
             } else if (boost::istarts_with(argv[i], "cainfo=")) {
                 CurlGlobal::SetCertificateAuthority(argv[i] + 7);
             }
