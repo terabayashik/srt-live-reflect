@@ -5,7 +5,7 @@
 
 #pragma once
 
-#ifdef WIN32
+#if defined(WIN32) || defined(WIN64)
 #define _CRT_SECURE_NO_WARNINGS 1
 #endif
 
@@ -34,4 +34,4 @@
 #include <boost/xpressive/xpressive.hpp>
 
 #include <curl/curl.h>
-#include <srt.h>
+#include <srt/srt.h>

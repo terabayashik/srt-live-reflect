@@ -67,15 +67,33 @@ protected:
 //----------------------------------------------------------------------------
 class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, private boost::noncopyable
 {
+    class Cache {
+        typedef std::pair<std::chrono::steady_clock::time_point, CURLcode> data_t;
+        typedef std::map<std::string, data_t> map_t;
+        map_t map_;
+    public:
+        Cache() : map_() {}
+        CURLcode find(boost::mutex& mutex, const std::string& key) const {
+            boost::mutex::scoped_lock lock(mutex);
+            map_t::const_iterator it = map_.find(key);
+            if (it == map_.end()) return CURL_LAST;
+            return (std::chrono::steady_clock::now() > it->second.first) ? CURL_LAST : it->second.second;
+        }
+        void set(boost::mutex& mutex, const std::string& key, CURLcode code, int32_t age) {
+            boost::mutex::scoped_lock lock(mutex);
+            map_[key] = std::make_pair(std::chrono::steady_clock::now() + std::chrono::seconds(age), code);
+        }
+    };
     const Json conf_;
     Curl curl_;
+    mutable Cache cache_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
     mutable boost::mutex mutex_;
     int32_t stats_;
     std::chrono::steady_clock::time_point stats_time_;
 protected:
-    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
+    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), cache_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
         boost::mutex::scoped_lock lock(mutex_);
@@ -154,11 +172,20 @@ protected:
         return true;
     }
     virtual CURLcode Call(const std::string& uri, Json& body) const {
-        CurlJsonIO io(curl_);
-        io.Reset(5, body);
-        curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
-        CURLcode res = curl_easy_perform(io);
-        body = (res == CURLE_OK) ? io.Json() : Json();
+        std::string key = (boost::format("%s:%s") % uri % body.serialize()).str();
+        CURLcode res = cache_.find(mutex_, key);
+        if (res == CURL_LAST) {
+            CurlJsonIO io(curl_);
+            io.Reset(5, body);
+            curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
+            res = curl_easy_perform(io);
+            if (res == CURLE_OK) {
+                body = io.Json();
+            } else {
+                body = Json();
+                cache_.set(mutex_, key, res, conf_["cacheAge"].to<int32_t>(10));
+            }
+        }
         return res;
     }
     virtual res_t Authorize(const std::string& on, const std::string& call, const SockAddr& addr, const StreamOption& streamOption) const {
@@ -167,9 +194,10 @@ protected:
         if (uri.empty()) return std::make_pair(true, Json());
         Json body;
         body["app"] = app().c_str();
+        body["name"] = streamOption.ResourceName().c_str();
         body["on"] = on.c_str();
         body["call"] = call.c_str();
-        body["addr"] = addr.ToString().c_str();
+        body["addr"] = addr.GetAddress().c_str();
         const URIOption::map_t map = streamOption.GetMap();
         for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
             body["streamid"][it->first] = it->second.c_str();
@@ -190,7 +218,7 @@ protected:
             if (!res.first) return false;
             option.SetSockOpts(conf_["option"], ListenOption::s_sockopts_pre); // "pre" options
             option.SetSockOpts(conf_["publish"]["option"], ListenOption::s_sockopts_pre);
-            option.SetSockOpts(res.second, ListenOption::s_sockopts_pre);
+            option.SetSockOpts(res.second["option"], ListenOption::s_sockopts_pre);
             return true;
         } else { // "request"
             Receiver::ptr_t receiver = FindReceiver(name);
@@ -199,7 +227,7 @@ protected:
             if (!res.first) return false;
             option.SetSockOpts(conf_["option"], ListenOption::s_sockopts_pre); // "pre" options
             option.SetSockOpts(conf_["play"]["option"], ListenOption::s_sockopts_pre);
-            option.SetSockOpts(res.second, ListenOption::s_sockopts_pre);
+            option.SetSockOpts(res.second["option"], ListenOption::s_sockopts_pre);
             return true;
         }
     }
@@ -219,7 +247,7 @@ protected:
             if (!res.first) return false;
             opt.SetSockOpts(conf_["option"], ReceiveOption::s_sockopts); // "post" options
             opt.SetSockOpts(conf_["publish"]["option"], ReceiveOption::s_sockopts);
-            opt.SetSockOpts(res.second, ReceiveOption::s_sockopts);
+            opt.SetSockOpts(res.second["option"], ReceiveOption::s_sockopts);
             receiver = Receiver::Create(sfd, opt);
             if (!receiver->Initialize()) {
                 std::cout << prefix(app()) << "Receiver::Initialize error: " << receiver->GetErrMsg() << std::endl;
@@ -241,7 +269,7 @@ protected:
             if (!res.first) return false;
             opt.SetSockOpts(conf_["option"], SendOption::s_sockopts); // "post" options
             opt.SetSockOpts(conf_["play"]["option"], SendOption::s_sockopts);
-            opt.SetSockOpts(res.second, SendOption::s_sockopts);
+            opt.SetSockOpts(res.second["option"], SendOption::s_sockopts);
             Event::ptr_t sender(ReflectSender::Create(sfd, opt));
             receiver->AddEvent(sender, 0, true);
             std::cout << prefix(app()) << "accept request [ " << name << " ] from " << opt["peer"] << std::endl;
@@ -306,6 +334,7 @@ public:
     virtual int Run(const std::string& conf_file) {
         try {
             Json json = Json::load(conf_file);
+            CurlGlobal::SetUserAgent(json["name"].to<std::string>().c_str());
             Json::Node reflects = json["reflects"];
             for (size_t i = 0, c = reflects.size(); i < c; ++i) {
                 Json conf = reflects[i];
@@ -378,7 +407,15 @@ protected:
 boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
+#define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
+#define VERSION MAKE_VERSION(0, 1, 0)
+
+//----------------------------------------------------------------------------
+/// @fn main
+//----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
+    std::cout << prefix() << " srt-live-reflect version " VERSION << " : started" << std::endl;
+    std::atexit([]() { std::cout << prefix() << " srt-live-reflect: version " VERSION << " : stopped" << std::endl; });
     try {
         std::string conf_file;
         for (int i = 1; i < argc; ++i) {

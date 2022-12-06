@@ -104,33 +104,45 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>C:\boost\boost_1_79_0;$(SolutionDir)../srt/common;$(SolutionDir)../srt/srtcore;$(SolutionDir)../srt/vc2017_1_5_1;$(IncludePath)</IncludePath>
-    <OutDir>$(ProjectDir)bin/$(Configuration)/</OutDir>
-    <IntDir>$(ProjectDir)obj/$(Configuration)/</IntDir>
-    <LibraryPath>C:\boost\boost_1_79_0\lib32-msvc-14.1;$(SolutionDir)../srt/vc2017_1_5_1;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\boost\boost_1_79_0;$(IncludePath)</IncludePath>
+    <OutDir>$(ProjectDir)bin/$(Platform)/$(Configuration)/</OutDir>
+    <IntDir>$(ProjectDir)obj/$(Platform)/$(Configuration)/</IntDir>
+    <LibraryPath>C:\boost\boost_1_79_0\lib32-msvc-14.1;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\boost\boost_1_79_0;$(SolutionDir)../srt/common;$(SolutionDir)../srt/srtcore;$(SolutionDir)../srt/vc2017_1_5_1;$(SolutionDir)inc;$(IncludePath)</IncludePath>
-    <OutDir>$(ProjectDir)bin/$(Configuration)/</OutDir>
-    <IntDir>$(ProjectDir)obj/$(Configuration)/</IntDir>
+    <IncludePath>C:\boost\boost_1_79_0;$(IncludePath)</IncludePath>
     <TargetName>$(ProjectName)_$(Configuration)</TargetName>
-    <LibraryPath>C:\boost\boost_1_79_0\lib32-msvc-14.1;$(SolutionDir)../srt/vc2017_1_5_1;$(LibraryPath)</LibraryPath>
+    <LibraryPath>C:\boost\boost_1_79_0\lib32-msvc-14.1;$(LibraryPath)</LibraryPath>
+    <OutDir>$(ProjectDir)bin/$(Platform)/$(Configuration)/</OutDir>
+    <IntDir>$(ProjectDir)obj/$(Platform)/$(Configuration)/</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <LibraryPath>C:\boost\boost_1_79_0\lib32-msvc-14.1;$(SolutionDir)../srt/vc2017_1_5_1;$(LibraryPath)</LibraryPath>
-    <IncludePath>C:\boost\boost_1_79_0;$(SolutionDir)../srt/common;$(SolutionDir)../srt/srtcore;$(SolutionDir)../srt/vc2017_1_5_1;$(SolutionDir)inc;$(IncludePath)</IncludePath>
-    <OutDir>$(ProjectDir)bin/$(Configuration)/</OutDir>
-    <IntDir>$(ProjectDir)obj/$(Configuration)/</IntDir>
+    <LibraryPath>C:\boost\boost_1_79_0\lib64-msvc-14.1;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\boost\boost_1_79_0;$(IncludePath)</IncludePath>
+    <OutDir>$(ProjectDir)bin/$(Platform)/$(Configuration)/</OutDir>
+    <IntDir>$(ProjectDir)obj/$(Platform)/$(Configuration)/</IntDir>
     <TargetName>$(ProjectName)_$(Configuration)</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>C:\boost\boost_1_79_0;$(SolutionDir)../srt/common;$(SolutionDir)../srt/srtcore;$(SolutionDir)../srt/vc2017_1_5_1;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\boost\boost_1_79_0\lib32-msvc-14.1;$(SolutionDir)../srt/vc2017_1_5_1;$(LibraryPath)</LibraryPath>
-    <OutDir>$(ProjectDir)bin/$(Configuration)/</OutDir>
-    <IntDir>$(ProjectDir)obj/$(Configuration)/</IntDir>
+    <IncludePath>C:\boost\boost_1_79_0;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\boost\boost_1_79_0\lib64-msvc-14.1;$(LibraryPath)</LibraryPath>
+    <OutDir>$(ProjectDir)bin/$(Platform)/$(Configuration)/</OutDir>
+    <IntDir>$(ProjectDir)obj/$(Platform)/$(Configuration)/</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -149,7 +161,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Release\srt_static.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libssl.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libcrypto.lib;Crypt32.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -165,7 +177,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Debug\srt_static.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libssl.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libcrypto.lib;Crypt32.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -174,7 +186,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\Projects\libsrt\srt\common;D:\Projects\libsrt\srt\srtcore;D:\Projects\libsrt\srt\vc2017_1_5_1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -182,7 +194,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Debug\srt_static.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libssl.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libcrypto.lib;Crypt32.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -193,7 +205,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\Projects\libsrt\srt\common;D:\Projects\libsrt\srt\srtcore;D:\Projects\libsrt\srt\vc2017_1_5_1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -203,7 +215,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Release\srt_static.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libssl.lib;D:\Projects\libsrt\openssl\x86\Debug\lib\libcrypto.lib;Crypt32.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

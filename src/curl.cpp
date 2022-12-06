@@ -1,7 +1,7 @@
 ﻿#include "stdafx.h"
 #include "curl.h"
 
-#if defined(WIN32)
+#if defined(WIN32) || defined(WIN64)
 #include <MSTcpIp.h> // tcp_keepalive
 #else
 #include <netinet/tcp.h> // for TCP_KEEPIDLE, TCP_KEEPINTVL
@@ -12,6 +12,7 @@
 //----------------------------------------------------------------------------
 boost::mutex CurlGlobal::mutex_;
 std::string CurlGlobal::cainfo_;
+std::string CurlGlobal::ua_;
 long CurlGlobal::timeout_ = 30;
 
 //----------------------------------------------------------------------------
@@ -20,6 +21,14 @@ long CurlGlobal::timeout_ = 30;
 void    CurlGlobal::SetCertificateAuthority(const char* cainfo) {
     lock_t lk(mutex_);
     cainfo_ = cainfo ? cainfo : "";
+}
+
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
+void    CurlGlobal::SetUserAgent(const char* ua) {
+    lock_t lk(mutex_);
+    ua_ = ua ? ua : "";
 }
 
 //----------------------------------------------------------------------------
@@ -36,6 +45,14 @@ void    CurlGlobal::SetDefaultTimeout(long timeout) {
 std::string CurlGlobal::GetCertificateAuthority() {
     lock_t lk(mutex_);
     return cainfo_;
+}
+
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
+std::string CurlGlobal::GetUserAgent() {
+    lock_t lk(mutex_);
+    return ua_;
 }
 
 //----------------------------------------------------------------------------
@@ -115,7 +132,7 @@ int     Curl::CallbackSockOptWrapper(void* clientp, curl_socket_t curlfd, curlso
 int     Curl::CallbackSockOpt(curl_socket_t curlfd, curlsocktype purpose) const {
     switch (purpose) {
         case CURLSOCKTYPE_IPCXN: {
-#ifdef WIN32
+#if defined(WIN32) || defined(WIN64)
             {
                 tcp_keepalive   t;
                 t.onoff = keepalive_;
@@ -169,7 +186,7 @@ void    CurlStrList::Append(const char* fmt, ...) {
 //----------------------------------------------------------------------------
 void    CurlStrList::AppendV(const char* fmt, va_list ap) {
     if (!fmt) return;
-#ifdef WIN32
+#if defined(WIN32) || defined(WIN64)
     size_t len = _vscprintf(fmt, ap);
     std::vector<char> buf(len + 1, '\0');
     buf.resize(_vsnprintf(buf.data(), len, fmt, ap) + 1);
@@ -228,6 +245,8 @@ bool    CurlStrIO::Reset(long timeout, const char* body) {
         curl_easy_setopt(*this, CURLOPT_FOLLOWLOCATION, 1);
         curl_easy_setopt(*this, CURLOPT_MAXREDIRS, 5);
     }
+    std::string ua = CurlGlobal::GetUserAgent();
+    if (!ua.empty()) curl_easy_setopt(*this, CURLOPT_USERAGENT, ua.c_str());
     // set certificate authority for SSL
     std::string cainfo = CurlGlobal::GetCertificateAuthority();
     curl_easy_setopt(*this, CURLOPT_SSL_VERIFYPEER, cainfo.empty() ? 0 : 1);

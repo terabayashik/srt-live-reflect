@@ -9,11 +9,14 @@ class CurlGlobal
     typedef boost::mutex::scoped_lock lock_t;
     static mutex_t mutex_;
     static std::string cainfo_;
+    static std::string ua_;
     static long timeout_;
 public:
     static void SetCertificateAuthority(const char* cainfo);
+    static void SetUserAgent(const char* ua);
     static void SetDefaultTimeout(long timeout);
     static std::string GetCertificateAuthority();
+    static std::string GetUserAgent();
     static long GetDefaultTimeout();
 };
 

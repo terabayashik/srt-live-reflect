@@ -4,16 +4,22 @@ reflect srt live stream
 ## build
 ### requirements
 * libsrt
+  * vcpkg install libsrt:x86-windows-static
+  * vcpkg install libsrt:x64-windows-static
 * libcurl
+  * vcpkg install curl:x86-windows-static
+  * vcpkg install curl:x64-windows-static
 * boost
 
 ## args
 ### conf=*{{path to conf file}}*
-  * **default** : *{{excecutable path}}* + *".conf"*
+* **default** : *{{path to srt-live-reflect executable}}* + *".conf"*
 ### cainfo=*{{path to certificate authority (CA) bundle}}*
+* certificate authority (CA) to verify peer in https access with libcurl
+* **default** : skip verification
 
 ## conf
-### srt-live-stream.conf
+### srt-live-stream.conf (JSON)
 * allow c style, c++ style comment and trailing commas
 ```json
 {
@@ -60,3 +66,41 @@ reflect srt live stream
 
 ## streamid
 [SRT Access Control (Stream ID) Guidelines](https://github.com/Haivision/srt/blob/master/docs/features/access-control.md)
+
+## service (windows)
+make it service with [nssm](https://nssm.cc/)
+
+### install
+```bat
+set nssm={{path to nssm.exe}}
+set dir={{directory where srt-live-reflect is}}
+set retentionDays=100
+
+mkdir "%dir%\logs"
+"%nssm%" install srt-live-reflect "%dir%\srt-live-reflect.exe"
+"%nssm%" set srt-live-reflect DisplayName srt-live-reflect
+"%nssm%" set srt-live-reflect Description srt-live-reflect service
+"%nssm%" set srt-live-reflect AppDirectory "%dir%"
+"%nssm%" set srt-live-reflect AppStdout "%dir%\logs\srt-live-reflect.log"
+"%nssm%" set srt-live-reflect AppStderr "%dir%\logs\srt-live-reflect.log"
+"%nssm%" set srt-live-reflect AppRotateFiles 1
+"%nssm%" set srt-live-reflect AppRotateOnline 1
+"%nssm%" set srt-live-reflect AppRotateBytes 10485760
+
+schtasks /Create /TN "srt-live-reflect_log-delete" /RU SYSTEM /SC DAILY /ST 00:05:00 /F /TR "forfiles /P '%dir%\logs' /D -%retentionDays% /M srt-live-reflect-*.log /C 'cmd /c if @isdir==FALSE del /s @path'"
+schtasks /Create /TN "srt-live-reflect_log-rotate" /RU SYSTEM /SC DAILY /ST 00:00:00 /F /TR "%nssm% rotate srt-live-reflect"
+
+net start srt-live-reflect
+```
+
+### remove
+```bat
+set nssm={{path to nssm.exe}}
+
+net stop srt-live-reflect
+
+"%nssm%" remove srt-live-reflect confirm
+
+schtasks.exe /Delete /TN "srt-live-reflect_log-delete" /F
+schtasks.exe /Delete /TN "srt-live-reflect_log-rotate" /F
+```
