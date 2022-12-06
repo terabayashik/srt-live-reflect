@@ -19,23 +19,27 @@ public:
         Node operator[](size_t idx);
         const Node operator[](const std::string& name) const;
         const Node operator[](size_t idx) const;
+        boost::json::value remove(const std::string& name);
+        boost::json::value remove(size_t idx);
         size_t size() const { return (!value_ || !value_->is_array()) ? 0 : value_->as_array().size(); }
         bool undefined() const { return !value_; }
-        boost::json::value to_value() const { return value_ ? *value_ : boost::json::value(); }
-        std::string to_string() const { return value_ ? boost::json::serialize(*value_) : ""; }
+        boost::json::value value() const { return value_ ? *value_ : boost::json::value(); }
+        std::string serialize() const { return value_ ? boost::json::serialize(*value_) : ""; }
         template <typename Type> Type to(const Type& defVal = Type()) const;
     };
 public:
     typedef std::vector<std::string> keys_t;
     Json(const boost::json::value& value = boost::json::value()) : boost::json::value(value) {}
-    Json(const Node& node) : boost::json::value(node.to_value()) {}
+    Json(const Node& node) : boost::json::value(node.value()) {}
     Json& operator=(const boost::json::value& value) { *static_cast<boost::json::value*>(this) = value; return *this; }
     Node operator[](const std::string& name) { return Node(this)[name]; }
     Node operator[](size_t idx) { return Node(this)[idx]; }
     const Node operator[](const std::string& name) const { return Node(const_cast<Json*>(this))[name]; }
     const Node operator[](size_t idx) const { return Node(const_cast<Json*>(this))[idx]; }
+    boost::json::value remove(const std::string& name) { return Node(this).remove(name); }
+    boost::json::value remove(size_t idx) { return Node(this).remove(idx); }
     size_t size() const { return Node(const_cast<Json*>(this)).size(); }
-    std::string to_string() const { return Node(const_cast<Json*>(this)).to_string(); }
+    std::string serialize() const { return Node(const_cast<Json*>(this)).serialize(); }
     template <typename Type> Type to(const Type& defVal = Type()) const { return Node(const_cast<Json*>(this)).to<Type>(defVal); }
     static Json parse(const std::string& str);
     static Json load(const std::string& path);

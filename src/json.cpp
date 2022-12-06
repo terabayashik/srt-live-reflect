@@ -70,6 +70,26 @@ const Json::Node Json::Node::operator[](size_t idx) const {
     return Node(path_t(), nullptr, value_->as_array().if_contains(idx));
 }
 
+boost::json::value Json::Node::remove(const std::string& name) {
+    if (!value_ || !value_->is_object()) return boost::json::value();
+    boost::json::object& obj = value_->as_object();
+    boost::json::value* value = obj.if_contains(name);
+    if (!value) return boost::json::value();
+    boost::json::value removed = *value;
+    obj.erase(name);
+    return removed;
+}
+
+boost::json::value Json::Node::remove(size_t idx) {
+    if (!value_ || !value_->is_array()) return boost::json::value();
+    boost::json::array& arr = value_->as_array();
+    boost::json::value* value = arr.if_contains(idx);
+    if (!value) return boost::json::value();
+    boost::json::value removed = *value;
+    arr.erase(value, value + 1);
+    return removed;
+}
+
 template <typename Type> Type Json::Node::to(const Type& defVal) const {
     if (!value_ || value_->is_null()) return defVal;
     if (value_->is_int64()) return static_cast<Type>(value_->as_int64());
