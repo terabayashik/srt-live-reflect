@@ -68,20 +68,22 @@ protected:
 class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, private boost::noncopyable
 {
     class Cache {
-        typedef std::pair<std::chrono::steady_clock::time_point, CURLcode> data_t;
+        typedef boost::tuple<std::chrono::steady_clock::time_point, CURLcode, Json> data_t;
         typedef std::map<std::string, data_t> map_t;
         map_t map_;
     public:
         Cache() : map_() {}
-        CURLcode find(boost::mutex& mutex, const std::string& key) const {
+        CURLcode find(boost::mutex& mutex, const std::string& key, Json& body) const {
             boost::mutex::scoped_lock lock(mutex);
             map_t::const_iterator it = map_.find(key);
             if (it == map_.end()) return CURL_LAST;
-            return (std::chrono::steady_clock::now() > it->second.first) ? CURL_LAST : it->second.second;
+            if (std::chrono::steady_clock::now() > it->second.get<0>()) return CURL_LAST;
+            body = it->second.get<2>();
+            return it->second.get<1>();
         }
-        void set(boost::mutex& mutex, const std::string& key, CURLcode code, int32_t age) {
+        void set(boost::mutex& mutex, const std::string& key, CURLcode code, const Json& body, int32_t age) {
             boost::mutex::scoped_lock lock(mutex);
-            map_[key] = std::make_pair(std::chrono::steady_clock::now() + std::chrono::seconds(age), code);
+            map_[key] = boost::make_tuple(std::chrono::steady_clock::now() + std::chrono::seconds(age), code, body);
         }
     };
     const Json conf_;
@@ -173,19 +175,14 @@ protected:
     }
     virtual CURLcode Call(const std::string& uri, Json& body) const {
         std::string key = (boost::format("%s:%s") % uri % body.serialize()).str();
-        CURLcode res = cache_.find(mutex_, key);
-        if (res == CURL_LAST) {
-            CurlJsonIO io(curl_);
-            io.Reset(5, body);
-            curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
-            res = curl_easy_perform(io);
-            if (res == CURLE_OK) {
-                body = io.Json();
-            } else {
-                body = Json();
-                cache_.set(mutex_, key, res, conf_["cacheAge"].to<int32_t>(10));
-            }
-        }
+        CURLcode res = cache_.find(mutex_, key, body);
+        if (res != CURL_LAST) return res;
+        CurlJsonIO io(curl_);
+        io.Reset(5, body);
+        curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
+        res = curl_easy_perform(io);
+        body = (res == CURLE_OK) ? io.Json() : Json();
+        cache_.set(mutex_, key, res, body, conf_["cacheAge"].to<int32_t>(10));
         return res;
     }
     virtual res_t Authorize(const std::string& on, const std::string& call, const SockAddr& addr, const StreamOption& streamOption) const {
@@ -408,7 +405,7 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 1, 0)
+#define VERSION MAKE_VERSION(0, 1, 1)
 
 //----------------------------------------------------------------------------
 /// @fn main

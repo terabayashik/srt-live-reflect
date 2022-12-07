@@ -28,6 +28,7 @@
 #include <boost/scoped_ptr.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/json.hpp>
+#include <boost/tuple/tuple.hpp>
 #include <boost/date_time/c_local_time_adjustor.hpp>
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
