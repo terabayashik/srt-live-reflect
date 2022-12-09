@@ -82,5 +82,5 @@ public:
     template <class Type> Type Get(const std::string& key, const Type& defval = Type()) const;
     template <class Type> Type Get(const std::string& key, const Type& defNoEntry, const Type& defBlank) const;
     virtual void Synonym(const std::string& key, const std::string& synonym) { synonym_[synonym] = key; }
-    virtual const map_t GetMap() const { return map_; }
+    virtual const map_t& GetMap() const { return map_; }
 };

@@ -195,7 +195,7 @@ protected:
         body["on"] = on.c_str();
         body["call"] = call.c_str();
         body["addr"] = addr.GetAddress().c_str();
-        const URIOption::map_t map = streamOption.GetMap();
+        const URIOption::map_t& map = streamOption.GetMap();
         for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
             body["streamid"][it->first] = it->second.c_str();
         }
@@ -344,7 +344,7 @@ public:
                     uri.Decode();
                     conf["host"] = uri.host.c_str();
                     conf["port"] = uri.port.c_str();
-                    URIOption::map_t map = query.GetMap();
+                    const URIOption::map_t& map = query.GetMap();
                     for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
                         conf["option"][it->first] = it->second.c_str();
                     }
