@@ -90,6 +90,14 @@ boost::json::value Json::Node::remove(size_t idx) {
     return removed;
 }
 
+std::string Json::Node::serialize(int32_t indent) const {
+    if (!value_) return "";
+    if (indent < 0) return boost::json::serialize(*value_);
+    std::stringstream ss;
+    pretty_print(ss, *value_, indent);
+    return ss.str();
+}
+
 template <typename Type> Type Json::Node::to(const Type& defVal) const {
     if (!value_ || value_->is_null()) return defVal;
     if (value_->is_int64()) return static_cast<Type>(value_->as_int64());
@@ -168,4 +176,69 @@ Json Json::load(const std::string& path) {
     }
     parser.finish();
     return Json(parser.release());
+}
+
+void Json::pretty_print(std::ostream& os, const boost::json::value& jv, int32_t indent, int32_t max_depth, int32_t depth) {
+    if (indent < 0) indent = 0;
+    if (depth < 0) depth = 0;
+    switch (jv.kind()) {
+        case boost::json::kind::object: {
+            const boost::json::object& obj = jv.get_object();
+            if (obj.empty() || (0 <= max_depth && max_depth <= depth)) {
+                os << "{}";
+                break;
+            }
+            os << "{\n";
+            std::string prefix = std::string(++depth * indent, ' ');
+            for (boost::json::object::const_iterator it = obj.begin(), end = obj.end();;) {
+                os << prefix << boost::json::serialize(it->key()) << ": ";
+                pretty_print(os, it->value(), indent, max_depth, depth);
+                if (++it == end) break;
+                os << ",\n";
+            }
+            os << "\n" << std::string(--depth * indent, ' ') << "}";
+            break;
+        }
+        case boost::json::kind::array: {
+            const boost::json::array& arr = jv.get_array();
+            if (!arr.size() || (0 <= max_depth && max_depth <= depth)) {
+                os << "[]";
+                break;
+            }
+            os << "[\n";
+            std::string prefix = std::string(++depth * indent, ' ');
+            for (boost::json::array::const_iterator it = arr.begin(), end = arr.end();;) {
+                os << prefix;
+                pretty_print(os, *it, indent, max_depth, depth);
+                if (++it == end) break;
+                os << ",\n";
+            }
+            os << "\n" << std::string(--depth * indent, ' ') << "]";
+            break;
+        }
+        case boost::json::kind::string: {
+            os << boost::json::serialize(jv.get_string());
+            break;
+        }
+        case boost::json::kind::uint64: {
+            os << jv.get_uint64();
+            break;
+        }
+        case boost::json::kind::int64: {
+            os << jv.get_int64();
+            break;
+        }
+        case boost::json::kind::double_: {
+            os << jv.get_double();
+            break;
+        }
+        case boost::json::kind::bool_: {
+            os << (jv.get_bool() ? "true" : "false");
+            break;
+        }
+        case boost::json::kind::null: {
+            os << "null";
+            break;
+        }
+    }
 }

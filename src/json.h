@@ -24,7 +24,7 @@ public:
         size_t size() const { return (!value_ || !value_->is_array()) ? 0 : value_->as_array().size(); }
         bool undefined() const { return !value_; }
         boost::json::value value() const { return value_ ? *value_ : boost::json::value(); }
-        std::string serialize() const { return value_ ? boost::json::serialize(*value_) : ""; }
+        std::string serialize(int32_t indent = -1) const;
         template <typename Type> Type to(const Type& defVal = Type()) const;
     };
 public:
@@ -39,8 +39,9 @@ public:
     boost::json::value remove(const std::string& name) { return Node(this).remove(name); }
     boost::json::value remove(size_t idx) { return Node(this).remove(idx); }
     size_t size() const { return Node(const_cast<Json*>(this)).size(); }
-    std::string serialize() const { return Node(const_cast<Json*>(this)).serialize(); }
+    std::string serialize(int32_t indent = -1) const { return Node(const_cast<Json*>(this)).serialize(indent); }
     template <typename Type> Type to(const Type& defVal = Type()) const { return Node(const_cast<Json*>(this)).to<Type>(defVal); }
     static Json parse(const std::string& str);
     static Json load(const std::string& path);
+    static void pretty_print(std::ostream& os, const boost::json::value& jv, int32_t indent = 2, int32_t max_depth = -1, int32_t depth = 0);
 };
