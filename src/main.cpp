@@ -405,7 +405,7 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 1, 1)
+#define VERSION MAKE_VERSION(0, 1, 2)
 
 //----------------------------------------------------------------------------
 /// @fn main
