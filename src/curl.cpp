@@ -195,7 +195,7 @@ void    CurlStrList::AppendV(const char* fmt, va_list ap) {
     va_copy(ap2, ap);
     size_t len = vsnprintf(nullptr, 0, fmt, ap2);
     std::vector<char> buf(len + 1, '\0');
-    buf.resize(vsnprintf(buf.data(), len, fmt, ap) + 1);
+    buf.resize(vsnprintf(buf.data(), len + 1, fmt, ap) + 1);
 #endif
     slist_ = curl_slist_append(slist_, buf.data());
 }
@@ -348,7 +348,7 @@ bool CurlJsonIO::Reset(long timeout, const boost::json::value& data) {
     if (!CurlStrIO::Reset(timeout, body.c_str())) {
         return false;
     }
-    curl_easy_setopt(*this, CURLOPT_POST, 1);
+    curl_easy_setopt(*this, CURLOPT_CUSTOMREQUEST, "POST");
     curl_easy_setopt(*this, CURLOPT_HTTPHEADER, header_());
     curl_easy_setopt(*this, CURLOPT_FAILONERROR, 1);
     return true;

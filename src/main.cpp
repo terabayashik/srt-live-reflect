@@ -405,14 +405,14 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 1, 2)
+#define VERSION MAKE_VERSION(0, 1, 3)
 
 //----------------------------------------------------------------------------
 /// @fn main
 //----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    std::cout << prefix() << " srt-live-reflect version " VERSION << " : started" << std::endl;
-    std::atexit([]() { std::cout << prefix() << " srt-live-reflect: version " VERSION << " : stopped" << std::endl; });
+    std::cout << prefix() << "srt-live-reflect version " VERSION << " (srt:" << SRT_VERSION_STRING << ") : started" << std::endl;
+    std::atexit([]() { std::cout << prefix() << "srt-live-reflect: version " VERSION << " : stopped" << std::endl; });
     try {
         std::string conf_file;
         for (int i = 1; i < argc; ++i) {

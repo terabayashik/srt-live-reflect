@@ -104,3 +104,11 @@ net stop srt-live-reflect
 schtasks.exe /Delete /TN "srt-live-reflect_log-delete" /F
 schtasks.exe /Delete /TN "srt-live-reflect_log-rotate" /F
 ```
+
+## work with ffmpeg
+
+### publish
+> ffmpeg -re -stream_loop -1 -i **{{path to movie file}}** -c:v copy -c:a copy -f mpegts -pes_payload_size 0 -srt_streamid #!::r=**{{stream name}}**,m=publish srt://**{{host}}**:**{{port}}**
+
+### playback
+> ffplay -srt_streamid #!::**{{stream name}}**,m=request srt://**{{host}}**:**{{port}}**
