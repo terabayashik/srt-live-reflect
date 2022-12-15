@@ -69,7 +69,7 @@ public:
                 srt_close(sfd);
                 continue;
             }
-            if (srt_bind(sfd, res->ai_addr, res->ai_addrlen) == SRT_ERROR) {
+            if (srt_bind(sfd, res->ai_addr, static_cast<int>(res->ai_addrlen)) == SRT_ERROR) {
                 errmsgs_ << boost::format("failed srt_bind() [ %s ]; %s") % SockAddr(res->ai_addr, res->ai_addrlen).ToString() % srt_getlasterror_str();
                 srt_close(sfd);
                 continue;
@@ -169,7 +169,7 @@ protected:
         }
         if (option.Has("passphrase")) {
             std::string passphrase = option.Get<std::string>("passphrase", "");
-            if (!passphrase.empty() && srt_setsockflag(sfd, SRTO_PASSPHRASE, passphrase.data(), passphrase.size()) == SRT_ERROR) {
+            if (!passphrase.empty() && srt_setsockflag(sfd, SRTO_PASSPHRASE, passphrase.data(), static_cast<int>(passphrase.size())) == SRT_ERROR) {
                 errmsgs << boost::format("failed srt_setsockflag(SRTO_PASSPHRASE) [ %s ]; %s") % passphrase % srt_getlasterror_str();
                 return false;
             }
@@ -304,14 +304,14 @@ protected:
         }
         if (option.Has("streamid")) {
             std::string streamid = option.Get<std::string>("streamid", "");
-            if (srt_setsockflag(sfd, SRTO_STREAMID, streamid.data(), streamid.size()) == SRT_ERROR) {
+            if (srt_setsockflag(sfd, SRTO_STREAMID, streamid.data(), static_cast<int>(streamid.size())) == SRT_ERROR) {
                 errmsgs << boost::format("failed srt_setsockflag(SRTO_STREAMID) [ %s ]; %s") % streamid % srt_getlasterror_str();
                 return false;
             }
         }
         if (option.Has("congestion")) {
             std::string congestion = option.Get<std::string>("congestion", "live");
-            if (srt_setsockflag(sfd, SRTO_CONGESTION, congestion.data(), congestion.size()) == SRT_ERROR) {
+            if (srt_setsockflag(sfd, SRTO_CONGESTION, congestion.data(), static_cast<int>(congestion.size())) == SRT_ERROR) {
                 errmsgs << boost::format("failed srt_setsockflag(SRTO_CONGESTION) [ %s ]; %s") % congestion % srt_getlasterror_str();
                 return false;
             }
@@ -360,7 +360,7 @@ protected:
         }
         if (option.Has("packetfilter")) {
             std::string packetfilter = option.Get<std::string>("packetfilter", "");
-            if (srt_setsockflag(sfd, SRTO_PACKETFILTER, packetfilter.data(), packetfilter.size()) == SRT_ERROR) {
+            if (srt_setsockflag(sfd, SRTO_PACKETFILTER, packetfilter.data(), static_cast<int>(packetfilter.size())) == SRT_ERROR) {
                 errmsgs << boost::format("failed srt_setsockflag(SRTO_PACKETFILTER) [ %s ]; %s") % packetfilter % srt_getlasterror_str();
                 return false;
             }
@@ -390,7 +390,7 @@ protected:
         int msTimeout = option_.Get<int>("epolltimeo", 100);
         std::vector<SRTSOCKET> srtrfds(sfds_.size(), SRT_INVALID_SOCK);
         for (; eid_ >= 0; CheckFlag(), boost::this_thread::interruption_point()) {
-            int srtrfdslen = srtrfds.size();
+            int srtrfdslen = static_cast<int>(srtrfds.size());
             int n = srt_epoll_wait(eid_, &srtrfds.at(0), &srtrfdslen, 0, 0, msTimeout, 0, 0, 0, 0);
             for (int i = 0; i < n; ++i) {
                 SRTSOCKET sfd = srtrfds[i];

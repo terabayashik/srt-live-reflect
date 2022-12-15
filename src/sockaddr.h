@@ -10,7 +10,7 @@ public:
     explicit SockAddr(const SockAddr& rhs);
     explicit SockAddr(const sockaddr_storage& rhs);
     explicit SockAddr(const char* host, const char* port, int skip = 0);
-    explicit SockAddr(const sockaddr* sa, int len = -1);
+    explicit SockAddr(const sockaddr* sa, size_t len = -1);
     SockAddr& operator=(const SockAddr& rhs);
     SockAddr& operator=(const sockaddr_storage& rhs);
     sockaddr_storage* operator&();

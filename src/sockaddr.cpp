@@ -34,7 +34,7 @@ SockAddr::SockAddr(const char* host, const char* port, int skip) {
     if (getaddrinfo(host, port, &hints, &res0)) return;
     for (addrinfo* res = res0; res; res = res->ai_next) {
         if (skip--) continue;
-        memcpy(static_cast<sockaddr_storage*>(this), res->ai_addr, std::min<int>(res->ai_addrlen, sizeof(sockaddr_storage)));
+        memcpy(static_cast<sockaddr_storage*>(this), res->ai_addr, std::min<size_t>(res->ai_addrlen, sizeof(sockaddr_storage)));
         break;
     }
     freeaddrinfo(res0);
@@ -42,16 +42,16 @@ SockAddr::SockAddr(const char* host, const char* port, int skip) {
 //----------------------------------------------------------------------------
 //
 //----------------------------------------------------------------------------
-SockAddr::SockAddr(const sockaddr* sa, int len) {
+SockAddr::SockAddr(const sockaddr* sa, size_t len) {
     memset(static_cast<sockaddr_storage*>(this), 0, sizeof(sockaddr_storage));
-    if (len < 0) {
+    if (static_cast<long long>(len) < 0) {
         switch (sa->sa_family) {
             case AF_INET: len = sizeof(sockaddr_in); break;
             case AF_INET6: len = sizeof(sockaddr_in6); break;
             default: return;
         }
     }
-    memcpy(static_cast<sockaddr_storage*>(this), sa, std::min<int>(len, sizeof(sockaddr_storage)));
+    memcpy(static_cast<sockaddr_storage*>(this), sa, std::min<size_t>(len, sizeof(sockaddr_storage)));
 }
 //----------------------------------------------------------------------------
 //

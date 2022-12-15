@@ -276,7 +276,7 @@ protected:
         int msTimeout = option_.Get<int>("epolltimeo", 100);
         std::vector<SRTSOCKET> srtrfds(1, SRT_INVALID_SOCK);
         for (; eid_ >= 0; CheckFlag(), boost::this_thread::interruption_point()) {
-            int srtrfdslen = srtrfds.size();
+            int srtrfdslen = static_cast<int>(srtrfds.size());
             int n = srt_epoll_wait(eid_, &srtrfds.at(0), &srtrfdslen, 0, 0, msTimeout, 0, 0, 0, 0);
             for (int i = 0; i < n; ++i) {
                 //ASSERT(srtrfds[i] == sfd_);
@@ -321,7 +321,7 @@ protected:
         for (int count = 10; count >= 0 && eid_ >= 0; --count, boost::this_thread::interruption_point()) {
             buf.resize(1500, 0);
             int32_t lastMsgNo = msgctrl.msgno;
-            int ret = srt_recvmsg2(sfd_, buf.data(), buf.size(), &msgctrl);
+            int ret = srt_recvmsg2(sfd_, buf.data(), static_cast<int>(buf.size()), &msgctrl);
             if (ret == SRT_ERROR) {
                 if (srt_getlasterror(nullptr) != SRT_EASYNCRCV) {
                     errmsgs_ << boost::format("failed srt_recvmsg2(): %s") % srt_getlasterror_str();

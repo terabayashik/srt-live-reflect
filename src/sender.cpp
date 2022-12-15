@@ -82,11 +82,11 @@ public:
             sfd_ = SRT_INVALID_SOCK;
         }
     }
-    virtual bool Send(const char* buf, int len) {
+    virtual bool Send(const char* buf, size_t len) {
         if (sfd_ == SRT_INVALID_SOCK) {
             return false;
         }
-        if (srt_send(sfd_, buf, len) == SRT_ERROR) {
+        if (srt_send(sfd_, buf, static_cast<int>(len)) == SRT_ERROR) {
             if (srt_getlasterror(nullptr) != SRT_EASYNCSND) {
                 errmsgs_ << boost::format("failed srt_send(): %s") % srt_getlasterror_str();
                 return false;
@@ -233,7 +233,7 @@ void Sender::Destroy() {
 bool Sender::Send(const Event::buf_t& buf) {
     return pimpl_->Send(buf.data(), buf.size());
 }
-bool Sender::Send(const char* buf, int len) {
+bool Sender::Send(const char* buf, size_t len) {
     return pimpl_->Send(buf, len);
 }
 const SendOption& Sender::GetOption() const {
