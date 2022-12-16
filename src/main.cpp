@@ -4,31 +4,7 @@
 #include "sender.h"
 #include "json.h"
 #include "curl.h"
-
-//----------------------------------------------------------------------------
-/// @fn timestamp
-//----------------------------------------------------------------------------
-std::string timestamp() {
-    const boost::posix_time::ptime now = boost::posix_time::microsec_clock::local_time();
-    const boost::posix_time::ptime utc = boost::posix_time::second_clock::universal_time();
-    const boost::posix_time::ptime local = boost::date_time::c_local_adjustor<boost::posix_time::ptime>::utc_to_local(utc);
-    const boost::posix_time::posix_time_system::time_duration_type td = local - utc;
-    std::ostringstream s;
-    s << boost::posix_time::to_iso_extended_string(now);
-    s.seekp(23); // millisec
-    s << (td.is_negative() ? '-' : '+');
-    s << std::setw(2) << std::setfill('0') << boost::date_time::absolute_value(td.hours()) << ':';
-    s << std::setw(2) << std::setfill('0') << boost::date_time::absolute_value(td.minutes());
-    return s.str();
-}
-
-//----------------------------------------------------------------------------
-/// @fn prefix
-//----------------------------------------------------------------------------
-std::string prefix(const std::string& app = "") {
-    if (app.empty()) return timestamp() + ": ";
-    return timestamp() + ": <" + app + "> ";
-}
+#include "logger.h"
 
 //----------------------------------------------------------------------------
 /// @class ReflectSender
@@ -57,7 +33,7 @@ protected:
         if (sender_->Send(buf)) return true;
         std::string err = sender_->GetErrMsg();
         sender_.reset();
-        std::cout << prefix(app_) << "send failed [" << name_ << "] for " << peer_ << " : " << err << std::endl;
+        Logger::Info(boost::format("<%s> send failed [%s] for %s : %s") % app_ % name_ % peer_ % err);
         return false;
     }
 };
@@ -122,12 +98,12 @@ public:
         opt.SetSockOpts(conf_["option"], ListenOption::s_sockopts_pre_bind); // "pre-bind" options
         Listener::ptr_t listener(Listener::Create(opt));
         if (!listener->Initialize()) {
-            std::cout << prefix(app()) << "Listener::Initialize error: " << listener->GetErrMsg() << std::endl;
+            Logger::Error(boost::format("<%s> Listener::Initialize error: %s") % app() % listener->GetErrMsg());
             return false;
         }
         listener->AddEvent(shared_from_this(), 0, false);
         listener_.swap(listener);
-        std::cout << prefix(app()) << "listen " << opt["host"] << ":" << opt["port"] << std::endl;
+        Logger::Info(boost::format("<%s> listen %s:%s") % app() % opt["host"] % opt["port"]);
         return true;
     }
     virtual void Destroy() {
@@ -247,13 +223,13 @@ protected:
             opt.SetSockOpts(res.second["option"], ReceiveOption::s_sockopts);
             receiver = Receiver::Create(sfd, opt);
             if (!receiver->Initialize()) {
-                std::cout << prefix(app()) << "Receiver::Initialize error: " << receiver->GetErrMsg() << std::endl;
+                Logger::Error(boost::format("<%s> Receiver::Initialize error: %s") % app() % receiver->GetErrMsg());
                 return false;
             }
             receiver->AddEvent(shared_from_this(), 0);
             boost::mutex::scoped_lock lock(mutex_);
             receivers_[name] = receiver;
-            std::cout << prefix(app()) << "accept publish [ " << name << " ] from " << opt["peer"] << std::endl;
+            Logger::Info(boost::format("<%s> accept publish [ %s ] from %s") % app() % name % opt["peer"]);
             return true;
         } else { // "request"
             Receiver::ptr_t receiver = FindReceiver(name);
@@ -269,7 +245,7 @@ protected:
             opt.SetSockOpts(res.second["option"], SendOption::s_sockopts);
             Event::ptr_t sender(ReflectSender::Create(sfd, opt));
             receiver->AddEvent(sender, 0, true);
-            std::cout << prefix(app()) << "accept request [ " << name << " ] from " << opt["peer"] << std::endl;
+            Logger::Info(boost::format("<%s> accept request [ %s ] from %s") % app() % name % opt["peer"]);
             return true;
         }
     }
@@ -280,7 +256,7 @@ protected:
             if (!it->second) continue;
             std::string name = receiver->GetOption().Get<std::string>("name");
             std::string stats = receiver->GetStatistics(1, ", ");
-            std::cout << prefix(app()) << "stats receive [ " << name << " ] : " << stats << std::endl;
+            Logger::Info(boost::format("<%s> stats receive [ %s ] : %s") % app() % name % stats);
         }
         stats_time_ += std::chrono::seconds(stats_);
         return false;
@@ -291,7 +267,7 @@ protected:
     virtual bool OnDisconnected(const ReceiveOption& option) override {
         std::string name = option.Get<std::string>("name");
         std::string peer = option.Get<std::string>("peer");
-        std::cout << prefix(app()) << "disconnected [" << name << "] from " << peer << std::endl;
+        Logger::Info(boost::format("<%s> disconnected [ %s ] from %s") % app() % name % peer);
         boost::mutex::scoped_lock lock(mutex_);
         Receiver::map_t::iterator it = receivers_.find(name);;
         if (it != receivers_.end() && it->second) {
@@ -309,56 +285,84 @@ class App
 {
     static boost::mutex mutex_;
     static boost::condition_variable cond_;
+    std::string name_;
+    std::string version_;
+    Json conf_;
     Reflect::vector_t reflects_;
 public:
-    App() : reflects_() {
+    App(const std::string& version) : name_("srt-live-reflect"), version_(version), conf_(), reflects_() {
     }
     virtual ~App() {
         Destroy();
     }
-    virtual bool Initialize() {
-        if (srt_startup() == SRT_ERROR) {
+    virtual bool Initialize(const std::string& conf_file) {
+        try {
+            conf_ = Json::load(conf_file);
+        } catch (const std::exception& ex) {
+            Logger::Info(boost::format("%s version %s (srt:%s) : started") % name_ % version_ % SRT_VERSION_STRING);
+            Logger::Fatal(boost::format("ERROR: failed to read conf [ %s ] : %s") % conf_file % ex.what());
             return false;
         }
-        srt_setloglevel(srt_logging::LogLevel::error);
+        name_ = conf_["name"].to<std::string>("srt-live-reflect");
+        try {
+            Logger::Init(conf_["logger"], name_.empty() ? "srt-live-reflect" : name_);
+            Logger::Info(boost::format("%s version %s (srt:%s) : started") % name_ % version_ % SRT_VERSION_STRING);
+            Logger::Debug(boost::format("conf: %s") % conf_.serialize(2));
+        } catch (const std::exception& ex) {
+            Logger::Info(boost::format("%s version %s (srt:%s) : started") % name_ % version_ % SRT_VERSION_STRING);
+            Logger::Warning(boost::format("WARNING: failed to initialize logger : %s") % ex.what());
+        }
+        CurlGlobal::SetUserAgent(name_.c_str());
+        CurlGlobal::SetCertificateAuthority(conf_["cainfo"].to<boost::filesystem::path>().string().c_str());
+        if (srt_startup() == SRT_ERROR) {
+            Logger::Fatal(boost::format("ERROR: srt_startup failed : %s") % srt_getlasterror_str());
+            return false;
+        }
+        std::string srtloglevel = conf_["srtloglevel"].to<std::string>("error");
+        if (boost::istarts_with(srtloglevel, "t") || boost::istarts_with(srtloglevel, "d")) {
+            srt_setloglevel(srt_logging::LogLevel::debug); // trace, debug
+        } else if (boost::istarts_with(srtloglevel, "n") || boost::istarts_with(srtloglevel, "i")) {
+            srt_setloglevel(srt_logging::LogLevel::note); // note, info
+        } else if (boost::istarts_with(srtloglevel, "w")) {
+            srt_setloglevel(srt_logging::LogLevel::warning);
+        } else if (boost::istarts_with(srtloglevel, "f")) {
+            srt_setloglevel(srt_logging::LogLevel::fatal);
+        } else {
+            srt_setloglevel(srt_logging::LogLevel::error); // as default
+        }
         srt_setloghandler(this, &App::logHandler);
         return true;
     }
     virtual void Destroy() {
         reflects_.clear();
         srt_cleanup();
+        Logger::Info(boost::format("%s version %s : stopped") % name_ % version_);
+        Logger::Term();
     }
-    virtual int Run(const std::string& conf_file) {
-        try {
-            Json json = Json::load(conf_file);
-            CurlGlobal::SetUserAgent(json["name"].to<std::string>().c_str());
-            Json::Node reflects = json["reflects"];
-            for (size_t i = 0, c = reflects.size(); i < c; ++i) {
-                Json conf = reflects[i];
-                Json::keys_t keys = conf.to<Json::keys_t>();
-                for (Json::keys_t::const_iterator it = keys.begin(); it != keys.end(); ++it) {
-                    if (!boost::iequals(*it, "uri")) continue;
-                    URI uri = conf[*it].to<std::string>();
-                    if (!boost::iequals(uri.scheme, "srt")) continue;
-                    URIOption query = uri.query;
-                    uri.Decode();
-                    conf["host"] = uri.host.c_str();
-                    conf["port"] = uri.port.c_str();
-                    const URIOption::map_t& map = query.GetMap();
-                    for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
-                        conf["option"][it->first] = it->second.c_str();
-                    }
+    virtual int Run() {
+        Json::Node reflects = conf_["reflects"];
+        for (size_t i = 0, c = reflects.size(); i < c; ++i) {
+            Json conf = reflects[i];
+            Json::keys_t keys = conf.to<Json::keys_t>();
+            for (Json::keys_t::const_iterator it = keys.begin(); it != keys.end(); ++it) {
+                if (!boost::iequals(*it, "uri")) continue;
+                URI uri = conf[*it].to<std::string>();
+                if (!boost::iequals(uri.scheme, "srt")) continue;
+                URIOption query = uri.query;
+                uri.Decode();
+                conf["host"] = uri.host.c_str();
+                conf["port"] = uri.port.c_str();
+                const URIOption::map_t& map = query.GetMap();
+                for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
+                    conf["option"][it->first] = it->second.c_str();
                 }
-                Reflect::ptr_t reflect = Reflect::Create(conf);
-                if (reflect->Initialize()) reflects_.push_back(reflect);
             }
-        } catch (std::exception& ex) {
-            std::cout << prefix() << "ERROR: " << "failed to read conf [ " << conf_file << "] : " << ex.what() << std::endl;
-            return -2;
+            Reflect::ptr_t reflect = Reflect::Create(conf);
+            if (reflect->Initialize()) reflects_.push_back(reflect);
         }
         if (reflects_.empty()) {
-            std::cout << prefix() << "ERROR: " << "there are no reflection entry" << std::endl;
-            return -1;
+            Logger::Fatal("ERROR: there are no reflection entry");
+            return -2;
         }
 #ifdef SIGBREAK
         std::signal(SIGBREAK, &App::signalHandler);
@@ -371,30 +375,30 @@ public:
     }
 protected:
     static void signalHandler(int signum) {
-        std::cout << prefix() << "signal : " << signum << std::endl;
+        Logger::Info(boost::format("signal : %d") % signum);
         boost::unique_lock<boost::mutex> lk(mutex_);
         cond_.notify_all();
     }
     static void logHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message) {
         switch (level) {
             case srt_logging::LogLevel::fatal: {
-                std::cout << prefix() << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "fatal" % message).str();
+                Logger::Fatal(boost::format("%s(%d): %s : %s : %s") % file % line % area % "fatal" % message);
                 break;
             }
             case srt_logging::LogLevel::error: {
-                std::cout << prefix() << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "error" % message).str();
+                Logger::Error(boost::format("%s(%d): %s : %s : %s") % file % line % area % "error" % message);
                 break;
             }
             case srt_logging::LogLevel::warning: {
-                std::cout << prefix() << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % " warn" % message).str();
+                Logger::Warning(boost::format("%s(%d): %s : %s : %s") % file % line % area % "warn" % message);
                 break;
             }
             case srt_logging::LogLevel::note: {
-                std::cout << prefix() << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % " note" % message).str();
+                Logger::Info(boost::format("%s(%d): %s : %s : %s") % file % line % area % "note" % message);
                 break;
             }
             case srt_logging::LogLevel::debug: {
-                std::cout << prefix() << (boost::format("%s(%d): %s : %s : %s\n") % file % line % area % "debug" % message).str();
+                Logger::Debug(boost::format("%s(%d): %s : %s : %s") % file % line % area % "debug" % message);
                 break;
             }
         }
@@ -405,39 +409,29 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 1, 3)
+#define VERSION MAKE_VERSION(0, 1, 4)
 
 //----------------------------------------------------------------------------
 /// @fn main
 //----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    std::cout << prefix() << "srt-live-reflect version " VERSION << " (srt:" << SRT_VERSION_STRING << ") : started" << std::endl;
-    std::atexit([]() { std::cout << prefix() << "srt-live-reflect: version " VERSION << " : stopped" << std::endl; });
     try {
         std::string conf_file;
         for (int i = 1; i < argc; ++i) {
             if (boost::istarts_with(argv[i], "conf=")) {
                 conf_file = std::string(argv[i] + 5);
-            } else if (boost::istarts_with(argv[i], "cainfo=")) {
-                CurlGlobal::SetCertificateAuthority(argv[i] + 7);
             }
         }
         if (conf_file.empty()) {
-            static const char sep[4] = { '\\', '/', '.', 0 };
-            conf_file = argv[0];
-            size_t pos = conf_file.find_last_of(sep);
-            if (pos != std::string::npos && boost::iequals(conf_file.substr(pos), ".exe")) {
-                conf_file = conf_file.substr(0, pos);
-            }
-            conf_file += ".conf";
+            conf_file = "./srt-live-reflect.conf";
         }
-        App app;
-        if (!app.Initialize()) {
-            return 1;
+        App app(VERSION);
+        if (!app.Initialize(conf_file)) {
+            return -1;
         }
-        return app.Run(conf_file);
-    } catch (std::exception& x) {
-        std::cout << prefix() << "exception : " << x.what() << std::endl;
+        return app.Run();
+    } catch (std::exception& ex) {
+        Logger::Fatal(boost::format("exception : %s") % ex.what());
         return -3;
     }
 }

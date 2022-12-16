@@ -33,6 +33,7 @@
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/xpressive/xpressive.hpp>
+#include <boost/filesystem.hpp>
 
 #include <curl/curl.h>
 #include <srt/srt.h>

@@ -126,6 +126,36 @@ template <> std::string Json::Node::to(const std::string& defVal) const {
     }
 }
 
+template <> boost::filesystem::path Json::Node::to(const boost::filesystem::path& defVal) const {
+    std::string s = to<std::string>();
+    if (s.empty()) return defVal;
+#if defined(WIN32) || defined(WIN64)
+    struct TO_W {
+        std::wstring operator()(const char* src, int cp) {
+            int len = MultiByteToWideChar(cp, 0, src, -1, NULL, 0);
+            if (!len) return L"";
+            std::wstring dst(len, L'\0');
+            MultiByteToWideChar(cp, 0, src, -1, &dst[0], len);
+            if (dst[len - 1] == L'\0') dst.resize(--len);
+            return dst;
+        }
+    } to_w;
+    struct TO_A {
+        std::string operator()(const wchar_t* src, int cp) {
+            int len = WideCharToMultiByte(cp, 0, src, -1, NULL, 0, NULL, NULL);
+            if (!len) return "";
+            std::string dst(len, '\0');
+            WideCharToMultiByte(cp, 0, src, -1, &dst[0], len, NULL, NULL);
+            if (dst[len - 1] == '\0') dst.resize(--len);
+            return dst;
+        }
+    } to_a;
+    return boost::filesystem::path(to_a(to_w(s.c_str(), CP_UTF8).c_str(), CP_ACP));
+#else
+    return boost::filesystem::path(s);
+#endif
+}
+
 template <> Json::keys_t Json::Node::to(const keys_t& defVal) const {
     if (!value_ || !value_->is_object()) return defVal;
     const boost::json::object& obj = value_->as_object();

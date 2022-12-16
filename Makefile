@@ -1,9 +1,9 @@
 CXX      = g++
-CFLAGS   = -Wall -g -O2 -std=c++14
+CPPFLAGS = -Wall -g -O2 -std=c++14 -DBOOST_LOG_DYN_LINK
 TARGET   = srt-live-reflect
 INCDIR   = -I./src -I/usr/local/include/srt
 LIBDIR   = 
-LIBS     = -lsrt -lpthread -lboost_thread -lboost_json -lcurl
+LIBS     = -lsrt -lpthread -lboost_thread -lboost_json -lboost_filesystem -lboost_log -lcurl
 SRCDIR   = ./src
 OBJDIR   = ./obj
 BINDIR   = ./bin
@@ -14,10 +14,10 @@ OBJS     = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:.cpp=.o)))
 all: prepare $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(CFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS)
+	$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
-	$(CXX) $(CFLAGS) $(INCDIR) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(INCDIR) -c $< -o $@
 
 prepare:
 	mkdir -p $(BINDIR)

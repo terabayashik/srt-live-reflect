@@ -13,10 +13,7 @@ reflect srt live stream
 
 ## args
 ### conf=*{{path to conf file}}*
-* **default** : *{{path to srt-live-reflect executable}}* + *".conf"*
-### cainfo=*{{path to certificate authority (CA) bundle}}*
-* certificate authority (CA) to verify peer in https access with libcurl
-* **default** : skip verification
+* **default** : *"./srt-live-reflect.conf"*
 
 ## conf
 ### srt-live-stream.conf (JSON)
@@ -24,37 +21,51 @@ reflect srt live stream
 ```json
 {
   "name": "srt-live-reflect",
+  "cainfo": "",                // path to certificate authority (CA) bundle (empty to skip CA verification) (default:"")
+  "srtloglevel": "error",      // srt log level ["debug" / "note" / "warning" / "error" / "fatal"] (default:"error")
+  "logger": {
+    "target": "",              // path to log directory (empty to disable logging) (default:"")
+    "level": "info",           // log level ["trace" / "debug" / "info" / "warning" / "error" / "fatal"] (default:"info")
+    "max_size": 1073741824,    // maximum total log size (default:1024*1024*1024)
+    "max_files": 30,           // maximum number of log files (default:30)
+  },
   "reflects": [{
     "app": "live",
     "port": 14501,
     "backlog": "5",
-    "option": { // srt options
+    "option": {                // srt options (pre-bind)
       "udpsndbuf": 65536,
-      "udprcvbuf": 65536
+      "udprcvbuf": 65536,
+      // ... (see:option)
     },
     "publish": {
-      "stats": 60, // period to print statistics in seconds (0: disabled)
-      "option": { // srt options for publish
-        "linger": 0
+      "stats": 600,            // period to print statistics in seconds (0:disabled) (default:0)
+      "option": {              // srt options for publish (pre)
+        "linger": 0,
+        // ... (see:option)
       },
-      "access": [ // static access control for publish
-        {"allow":"192.168.11.0/24", "name":"stream-*"}, // allow publish with streamid "#!::r=stream-xxx,m=publish" from 192.168.11.0/24
-        {"deny":"all"} // deny all others
+      "access": [              // static access control for publish
+        {
+          "allow":"192.168.11.0/24", // allow from 192.168.11.0/24
+          "name":"stream-*"          // apply only resouce name matches (default:"*") (see:streamid)
+        },
+        {"deny":"all"}         // deny all others
       ],
-      "on_pre_accept": "http://127.0.0.1:8090/on_pre_accept_publish",
-      // "on_accept": "http://127.0.0.1:8090/on_accept_publish"
+      "on_pre_accept": "http://127.0.0.1:8090/on_pre_accept_publish", // dynamic access control for publish
+      // "on_accept": "http://127.0.0.1:8090/on_accept_publish"       // comment out
     },
     "play": {
-      "option": { // srt options for play
+      "option": {              // srt options for play (pre)
         "maxbw": 0,
         "inputbw": 0,
-        "oheadbw": 25
+        "oheadbw": 25,
+        // ... (see:option)
       },
-      "access": [ // static access control for play
+      "access": [              // static access control for play
         {"allow":"127.0.0.1"},
         {"deny":"all"}
       ],
-      "on_pre_accept": "http://127.0.0.1:8090/on_pre_accept_play",
+      // "on_pre_accept": "http://127.0.0.1:8090/on_pre_accept_play",
       // "on_accept": "http://127.0.0.1:8090/on_accept_play"
     }
   }]
@@ -74,35 +85,18 @@ make it service with [nssm](https://nssm.cc/)
 ```bat
 set nssm={{path to nssm.exe}}
 set dir={{directory where srt-live-reflect is}}
-set retentionDays=100
-
-mkdir "%dir%\logs"
 "%nssm%" install srt-live-reflect "%dir%\srt-live-reflect.exe"
 "%nssm%" set srt-live-reflect DisplayName srt-live-reflect
 "%nssm%" set srt-live-reflect Description srt-live-reflect service
 "%nssm%" set srt-live-reflect AppDirectory "%dir%"
-"%nssm%" set srt-live-reflect AppStdout "%dir%\logs\srt-live-reflect.log"
-"%nssm%" set srt-live-reflect AppStderr "%dir%\logs\srt-live-reflect.log"
-"%nssm%" set srt-live-reflect AppRotateFiles 1
-"%nssm%" set srt-live-reflect AppRotateOnline 1
-"%nssm%" set srt-live-reflect AppRotateBytes 10485760
-
-schtasks /Create /TN "srt-live-reflect_log-delete" /RU SYSTEM /SC DAILY /ST 00:05:00 /F /TR "forfiles /P '%dir%\logs' /D -%retentionDays% /M srt-live-reflect-*.log /C 'cmd /c if @isdir==FALSE del /s @path'"
-schtasks /Create /TN "srt-live-reflect_log-rotate" /RU SYSTEM /SC DAILY /ST 00:00:00 /F /TR "%nssm% rotate srt-live-reflect"
-
 net start srt-live-reflect
 ```
 
 ### remove
 ```bat
 set nssm={{path to nssm.exe}}
-
 net stop srt-live-reflect
-
 "%nssm%" remove srt-live-reflect confirm
-
-schtasks.exe /Delete /TN "srt-live-reflect_log-delete" /F
-schtasks.exe /Delete /TN "srt-live-reflect_log-rotate" /F
 ```
 
 ## work with ffmpeg
