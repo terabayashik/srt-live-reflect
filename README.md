@@ -99,6 +99,34 @@ net stop srt-live-reflect
 "%nssm%" remove srt-live-reflect confirm
 ```
 
+## service (linux)
+make it service with systemd
+
+### {{directory where srt-live-reflect is}}/startup.sh
+```sh
+#! /bin/sh
+cd `dirname $0`
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib64:/usr/local/lib
+./srt-live-reflect conf=./srt-live-reflect.conf
+```
+
+### /etc/systemd/system/srt-live-reflect.service
+```
+[Unit]
+Description=srt-live-reflect service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{directory where srt-live-reflect is}}/startup.sh
+Restart=always
+User={{user}}
+Group={{group}}
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ## work with ffmpeg
 
 ### publish
