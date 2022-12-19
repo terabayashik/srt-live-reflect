@@ -44,14 +44,14 @@ SockAddr::SockAddr(const char* host, const char* port, int skip) {
 //----------------------------------------------------------------------------
 SockAddr::SockAddr(const sockaddr* sa, size_t len) {
     memset(static_cast<sockaddr_storage*>(this), 0, sizeof(sockaddr_storage));
-    if (static_cast<long long>(len) < 0) {
+    if (len > sizeof(sockaddr_storage)) {
         switch (sa->sa_family) {
             case AF_INET: len = sizeof(sockaddr_in); break;
             case AF_INET6: len = sizeof(sockaddr_in6); break;
             default: return;
         }
     }
-    memcpy(static_cast<sockaddr_storage*>(this), sa, std::min<size_t>(len, sizeof(sockaddr_storage)));
+    memcpy(static_cast<sockaddr_storage*>(this), sa, len);
 }
 //----------------------------------------------------------------------------
 //
@@ -143,7 +143,7 @@ bool SockAddr::GetSockName(int sfd) {
 bool SockAddr::GetPeerName(int sfd) {
     sockaddr* p = reinterpret_cast<sockaddr*>(static_cast<sockaddr_storage*>(this));
     int len = sizeof(sockaddr_storage);
-    return srt_getsockname(static_cast<SRTSOCKET>(sfd), p, &len) != SRT_ERROR;
+    return srt_getpeername(static_cast<SRTSOCKET>(sfd), p, &len) != SRT_ERROR;
 }
 //----------------------------------------------------------------------------
 //  convert IPv4-mapped IPv6 address to IPv4 address
