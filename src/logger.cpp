@@ -24,6 +24,7 @@ std::function<void(const std::string&)> Logger::info_ = boost::bind<void, const 
 std::function<void(const std::string&)> Logger::warning_ = boost::bind<void, const std::string&, const std::string&>(&StdOut, boost::placeholders::_1, "warning");
 std::function<void(const std::string&)> Logger::error_ = boost::bind<void, const std::string&, const std::string&>(&StdOut, boost::placeholders::_1, "error");
 std::function<void(const std::string&)> Logger::fatal_ = boost::bind<void, const std::string&, const std::string&>(&StdOut, boost::placeholders::_1, "fatal");
+int Logger::level_ = static_cast<int>(boost::log::trivial::info);
 
 std::string Logger::Timestamp() {
     const boost::posix_time::ptime now = boost::posix_time::microsec_clock::local_time();
@@ -69,27 +70,28 @@ void Logger::Init(const Json::Node& conf, const std::string& name) {
         //std::locale loc("");
         //file_sink->imbue(loc);
     }
-    boost::log::add_common_attributes();
+    //boost::log::add_common_attributes(); // LineID, TimeStamp, ProcessID, ThreadID
     std::string level = conf["level"].to<std::string>();
+    boost::log::trivial::severity_level severity_level = boost::log::trivial::info;
     if (boost::istarts_with(level, "t")) {
-        boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::trace);
+        severity_level = boost::log::trivial::trace;
     } else if (boost::istarts_with(level, "d")) {
-        boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::debug);
+        severity_level = boost::log::trivial::debug;
     } else if (boost::istarts_with(level, "w")) {
-        boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::warning);
+        severity_level = boost::log::trivial::warning;
     } else if (boost::istarts_with(level, "e")) {
-        boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::error);
+        severity_level = boost::log::trivial::error;
     } else if (boost::istarts_with(level, "f")) {
-        boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::fatal);
-    } else {
-        boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::info);
+        severity_level = boost::log::trivial::fatal;
     }
-    trace_ = [](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(trace) << msg; };
-    debug_ = [](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(debug) << msg; };
-    info_ = [](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(info) << msg; };
-    warning_ = [](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(warning) << msg; };
-    error_ = [](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(error) << msg; };
-    fatal_ = [](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(fatal) << msg; };
+    boost::log::core::get()->set_filter(boost::log::trivial::severity >= severity_level);
+    trace_ = (boost::log::trivial::trace >= severity_level) ? ([](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(trace) << msg; }) : NoOp;
+    debug_ = (boost::log::trivial::debug >= severity_level) ? ([](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(debug) << msg; }) : NoOp;
+    info_ = (boost::log::trivial::info >= severity_level) ? ([](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(info) << msg; }) : NoOp;
+    warning_ = (boost::log::trivial::warning >= severity_level) ? ([](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(warning) << msg; }) : NoOp;
+    error_ = (boost::log::trivial::error >= severity_level) ? ([](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(error) << msg; }) : NoOp;
+    fatal_ = (boost::log::trivial::fatal >= severity_level) ? ([](const std::string& msg) -> void { BOOST_LOG_TRIVIAL(fatal) << msg; }) : NoOp;
+    level_ = static_cast<int>(severity_level);
 }
 
 void Logger::Term() {
@@ -100,4 +102,29 @@ void Logger::Term() {
     warning_ = boost::bind<void, const std::string&, const std::string&>(&StdOut, boost::placeholders::_1, "warning");
     error_ = boost::bind<void, const std::string&, const std::string&>(&StdOut, boost::placeholders::_1, "error");
     fatal_ = boost::bind<void, const std::string&, const std::string&>(&StdOut, boost::placeholders::_1, "fatal");
+    level_ = static_cast<int>(boost::log::trivial::info);
+}
+
+bool Logger::TraceEnabled() {
+    return static_cast<int>(boost::log::trivial::trace) >= level_;
+}
+
+bool Logger::DebugEnabled() {
+    return static_cast<int>(boost::log::trivial::debug) >= level_;
+}
+
+bool Logger::InfoEnabled() {
+    return static_cast<int>(boost::log::trivial::info) >= level_;
+}
+
+bool Logger::WarningEnabled() {
+    return static_cast<int>(boost::log::trivial::warning) >= level_;
+}
+
+bool Logger::ErrorEnabled() {
+    return static_cast<int>(boost::log::trivial::error) >= level_;
+}
+
+bool Logger::FatalEnabled() {
+    return static_cast<int>(boost::log::trivial::fatal) >= level_;
 }

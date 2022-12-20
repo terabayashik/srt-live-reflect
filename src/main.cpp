@@ -138,18 +138,28 @@ protected:
             }
             std::string deny = access[i]["deny"].to<std::string>();
             if (!deny.empty()) {
-                if (deny == "*" || boost::iequals(deny, "all")) return false;
-                if (addr.Match(deny)) return false;
+                if (deny == "*" || boost::iequals(deny, "all") || addr.Match(deny)) {
+                    if (Logger::DebugEnabled()) {
+                        Logger::Debug(boost::format("<%s> access denied: [ %s ] [ %s ] : %s")
+                            % app() % addr.ToString() % streamOption(',', '=') % access[i].serialize());
+                    }
+                    return false;
+                }
             }
             std::string allow = access[i]["allow"].to<std::string>();
             if (!allow.empty()) {
-                if (allow == "*" || boost::iequals(allow, "all")) return true;
-                if (addr.Match(allow)) return true;
+                if (allow == "*" || boost::iequals(allow, "all") || addr.Match(allow)) {
+                    if (Logger::TraceEnabled()) {
+                        Logger::Trace(boost::format("<%s> access allowed: [ %s ] [ %s ] : %s")
+                            % app() % addr.ToString() % streamOption(',', '=') % access[i].serialize());
+                    }
+                    return true;
+                }
             }
         }
         return true;
     }
-    virtual CURLcode Call(const std::string& uri, Json& body) const {
+    virtual CURLcode Perform(const std::string& uri, Json& body, const SockAddr& addr, const StreamOption& streamOption) const {
         std::string key = (boost::format("%s:%s") % uri % body.serialize()).str();
         CURLcode res = cache_.find(mutex_, key, body);
         if (res != CURL_LAST) return res;
@@ -157,7 +167,23 @@ protected:
         io.Reset(5, body);
         curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
         res = curl_easy_perform(io);
-        body = (res == CURLE_OK) ? io.Json() : Json();
+        if (res == CURLE_OK) {
+            body = io.Json();
+            if (Logger::TraceEnabled()) {
+                long code = 0;
+                curl_easy_getinfo(io, CURLINFO_RESPONSE_CODE, &code);
+                Logger::Trace(boost::format("<%s> access allowed: [ %s ] [ %s ] : [ POST %s ] => (%d) [ %s ]")
+                    % app() % addr.ToString() % streamOption(',', '=') % uri % code % io.Body());
+            }
+        } else {
+            body = Json();
+            if (Logger::DebugEnabled()) {
+                long code = 0;
+                curl_easy_getinfo(io, CURLINFO_RESPONSE_CODE, &code);
+                Logger::Debug(boost::format("<%s> access denied: [ %s ] [ %s ] : [ POST %s ] => (%d) [ %s ] : %s")
+                    % app() % addr.ToString() % streamOption(',', '=') % uri % code % io.Body() % io.Error());
+            }
+        }
         cache_.set(mutex_, key, res, body, conf_["cacheAge"].to<int32_t>(10));
         return res;
     }
@@ -175,7 +201,7 @@ protected:
         for (URIOption::map_t::const_iterator it = map.begin(); it != map.end(); ++it) {
             body["streamid"][it->first] = it->second.c_str();
         }
-        CURLcode res = Call(uri, body);
+        CURLcode res = Perform(uri, body, addr, streamOption);
         return std::make_pair(res == CURLE_OK, body);
     }
     virtual bool OnPreAccept(ListenOption& option, int sfd, const SockAddr& peer, const StreamOption& streamOption) override {
@@ -307,11 +333,11 @@ public:
         try {
             Logger::Init(conf_["logger"], name_.empty() ? "srt-live-reflect" : name_);
             Logger::Info(boost::format("%s version %s (srt:%s) : started") % name_ % version_ % SRT_VERSION_STRING);
-            Logger::Debug(boost::format("conf: %s") % conf_.serialize(2));
         } catch (const std::exception& ex) {
             Logger::Info(boost::format("%s version %s (srt:%s) : started") % name_ % version_ % SRT_VERSION_STRING);
             Logger::Warning(boost::format("WARNING: failed to initialize logger : %s") % ex.what());
         }
+        Logger::Debug(boost::format("conf: %s") % conf_.serialize(2));
         CurlGlobal::SetUserAgent(name_.c_str());
         CurlGlobal::SetCertificateAuthority(conf_["cainfo"].to<boost::filesystem::path>().string().c_str());
         if (srt_startup() == SRT_ERROR) {
@@ -409,7 +435,7 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 1, 4)
+#define VERSION MAKE_VERSION(0, 1, 5)
 
 //----------------------------------------------------------------------------
 /// @fn main
