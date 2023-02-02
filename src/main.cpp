@@ -63,7 +63,6 @@ class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, pr
         }
     };
     const Json conf_;
-    Curl curl_;
     mutable Cache cache_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
@@ -71,7 +70,7 @@ class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, pr
     int32_t stats_;
     std::chrono::steady_clock::time_point stats_time_;
 protected:
-    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), cache_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
+    Reflect(const Json& conf) : Event(), conf_(conf), cache_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
         boost::mutex::scoped_lock lock(mutex_);
@@ -163,7 +162,8 @@ protected:
         std::string key = (boost::format("%s:%s") % uri % body.serialize()).str();
         CURLcode res = cache_.find(mutex_, key, body);
         if (res != CURL_LAST) return res;
-        CurlJsonIO io(curl_);
+        Curl curl;
+        CurlJsonIO io(curl);
         io.Reset(5, body);
         curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
         res = curl_easy_perform(io);
