@@ -1,10 +1,11 @@
 ﻿#include "stdafx.h"
-#include "listener.h"
-#include "receiver.h"
-#include "sender.h"
 #include "json.h"
 #include "curl.h"
 #include "logger.h"
+#include "listener.h"
+#include "receiver.h"
+#include "sender.h"
+#include "looprec.h"
 
 //----------------------------------------------------------------------------
 /// @class ReflectSender
@@ -66,11 +67,12 @@ class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, pr
     mutable Cache cache_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
+    LoopRec::map_t loopRecs_;
     mutable boost::mutex mutex_;
     int32_t stats_;
     std::chrono::steady_clock::time_point stats_time_;
 protected:
-    Reflect(const Json& conf) : Event(), conf_(conf), cache_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
+    Reflect(const Json& conf) : Event(), conf_(conf), cache_(), listener_(), receivers_(), loopRecs_(), mutex_(), stats_(0), stats_time_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
         boost::mutex::scoped_lock lock(mutex_);
@@ -103,10 +105,12 @@ public:
         listener->AddEvent(shared_from_this(), 0, false);
         listener_.swap(listener);
         Logger::Info(boost::format("<%s> listen %s:%s") % app() % opt["host"] % opt["port"]);
+        loopRecs_ = LoopRec::Create(conf_["loopRecs"], app());
         return true;
     }
     virtual void Destroy() {
         receivers_.clear();
+        loopRecs_.clear();
         listener_.reset();
     }
     virtual std::string app() const {
@@ -253,6 +257,8 @@ protected:
                 return false;
             }
             receiver->AddEvent(shared_from_this(), 0);
+            LoopRec::map_t::const_iterator loopRec = loopRecs_.find(name);
+            if (loopRec != loopRecs_.end() && loopRec->second) receiver->AddEvent(loopRec->second, -1);
             boost::mutex::scoped_lock lock(mutex_);
             receivers_[name] = receiver;
             Logger::Info(boost::format("<%s> accept publish [ %s ] from %s") % app() % name % opt["peer"]);

@@ -24,6 +24,7 @@
     <ClCompile Include="src\json.cpp" />
     <ClCompile Include="src\listener.cpp" />
     <ClCompile Include="src\logger.cpp" />
+    <ClCompile Include="src\looprec.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\messages.cpp" />
     <ClCompile Include="src\option.cpp" />
@@ -44,6 +45,7 @@
     <ClInclude Include="src\json.h" />
     <ClInclude Include="src\listener.h" />
     <ClInclude Include="src\logger.h" />
+    <ClInclude Include="src\looprec.h" />
     <ClInclude Include="src\messages.h" />
     <ClInclude Include="src\option.h" />
     <ClInclude Include="src\receiver.h" />
