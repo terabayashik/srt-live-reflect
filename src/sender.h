@@ -19,6 +19,7 @@ public:
     virtual void Destroy();
     virtual bool Send(const Event::buf_t& buf);
     virtual bool Send(const char* buf, size_t len);
+    virtual bool IsConnected() const;
     virtual const SendOption& GetOption() const;
     virtual std::string GetErrMsg(const std::string& sep = "\n") const;
     virtual std::string GetStatistics(int level = 1, const std::string& sep = "\n") const;

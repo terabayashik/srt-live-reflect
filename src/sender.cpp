@@ -94,6 +94,14 @@ public:
         }
         return true;
     }
+    virtual bool IsConnected() const {
+        if (sfd_ == SRT_INVALID_SOCK) {
+            return false;
+        }
+        SRT_SOCKSTATUS status = srt_getsockstate(sfd_);
+        return status == SRTS_CONNECTED;
+        //return status == SRTS_CONNECTED || status == SRTS_CONNECTING;
+    }
     virtual const SendOption& GetOption() const {
         return option_;
     }
@@ -235,6 +243,9 @@ bool Sender::Send(const Event::buf_t& buf) {
 }
 bool Sender::Send(const char* buf, size_t len) {
     return pimpl_->Send(buf, len);
+}
+bool Sender::IsConnected() const {
+    return pimpl_->IsConnected();
 }
 const SendOption& Sender::GetOption() const {
     return pimpl_->GetOption();
