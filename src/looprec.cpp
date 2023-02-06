@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 #include "looprec.h"
 #include "logger.h"
+#include "sender.h"
 
 //----------------------------------------------------------------------------
 ///
@@ -97,11 +98,11 @@ public:
         Close();
         __super::Destroy();
     }
-    virtual bool Write(const std::chrono::steady_clock::time_point& now, const Event::buf_t& buf) {
+    virtual bool Write(const std::chrono::steady_clock::time_point& tick, const Event::buf_t& buf) {
         if (!dat_file_.is_open()) return false;
         dat_file_.write(&buf.at(0), buf.size());
         bool flush = false;
-        while (now >= idx_time_) {
+        while (tick >= idx_time_) {
             if (!WriteIndex()) return false;
             flush = true;
         }
@@ -150,6 +151,9 @@ protected:
 //----------------------------------------------------------------------------
 class LoopRec::Impl
 {
+    class LoopRecSender;
+    typedef boost::shared_ptr<LoopRecSender> looprec_sender_ptr_t;
+    typedef std::vector<looprec_sender_ptr_t> looprec_senders_t;
     LoopRec* owner_;
     const Json conf_;
     const std::string app_;
@@ -163,10 +167,12 @@ class LoopRec::Impl
     std::chrono::seconds total_duration_;
     std::chrono::milliseconds idx_interval_;
     std::chrono::steady_clock::time_point segment_time_;
+    mutable boost::mutex mutex_;
+    looprec_senders_t senders_;
 public:
     Impl(LoopRec* owner, const Json& conf, const std::string& app, const std::string& name)
         : owner_(owner), conf_(conf), app_(app), name_(name), segments_(), segmentWriter_(), dir_(), dat_ext_(".dat"), idx_ext_(".idx")
-        , segment_duration_(600), total_duration_(3600), idx_interval_(100), segment_time_() {
+        , segment_duration_(600), total_duration_(3600), idx_interval_(100), segment_time_(), mutex_(), senders_() {
     }
     virtual ~Impl() {
         Destroy();
@@ -210,13 +216,22 @@ public:
         return true;
     }
     virtual void Destroy() {
+        senders_.clear();
         segmentWriter_.reset();
         segments_.clear();
     }
+    virtual bool IsAcceptable(const StreamOption& streamOption) const {
+        const boost::posix_time::ptime now = boost::posix_time::microsec_clock::universal_time();
+        const boost::posix_time::ptime at = GetStartedAt(streamOption.Get<std::string>("at"), now);
+        if (at.is_special()) return false;
+        if (at + boost::posix_time::seconds(total_duration_.count()) < now || now < at) return false;
+        return true;
+    }
+    virtual void CreateSender(int sfd, const SendOption& sendOption, const StreamOption& streamOption);
     virtual bool OnReceive(const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
-        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
         std::string suffix = "Z"; // UTC
-        if (segmentWriter_ && now >= segment_time_) {
+        if (segmentWriter_ && tick >= segment_time_) {
             segmentWriter_->Close();
             segmentWriter_.reset();
             suffix += CONTINUOUS; // '=' means continuous data from previous segment
@@ -225,14 +240,15 @@ public:
             boost::posix_time::ptime utc = boost::posix_time::microsec_clock::universal_time();
             RemoveExpiredSegments(utc);
             boost::filesystem::path path = dir_ / (boost::posix_time::to_iso_string(utc) + suffix + dat_ext_);
-            SegmentWriter::ptr_t segmentWriter(new SegmentWriter(app_, name_, path, idx_ext_, idx_interval_, now));
+            SegmentWriter::ptr_t segmentWriter(new SegmentWriter(app_, name_, path, idx_ext_, idx_interval_, tick));
             if (segmentWriter->Initialize()) {
+                boost::mutex::scoped_lock lock(mutex_);
                 segments_[utc] = segmentWriter_ = segmentWriter;
-                segment_time_ = now + segment_duration_;
+                segment_time_ = tick + segment_duration_;
             }
         }
         if (segmentWriter_) {
-            segmentWriter_->Write(now, buf);
+            segmentWriter_->Write(tick, buf);
         }
         return true;
     }
@@ -246,14 +262,137 @@ public:
 protected:
     virtual void RemoveExpiredSegments(const boost::posix_time::ptime& utc) {
         boost::posix_time::seconds dur((total_duration_ + segment_duration_).count());
-        while (!segments_.empty()) {
-            Segment::map_t::iterator it = segments_.begin();
+        Segment::map_t::iterator it = segments_.begin();
+        for (; it != segments_.end(); ++it) {
             if (it->first + dur > utc) break;
             it->second->SetExpired(true);
-            segments_.erase(it);
         }
+        boost::mutex::scoped_lock lock(mutex_);
+        segments_.erase(segments_.begin(), it);
+    }
+    virtual void RemoveSender(looprec_sender_ptr_t sender) {
+        boost::mutex::scoped_lock lock(mutex_);
+        boost::range::remove_erase(senders_, sender);
+    }
+    virtual Segment::ptr_t GetSegment(boost::posix_time::ptime& utc) {
+        boost::mutex::scoped_lock lock(mutex_);
+        Segment::map_t::const_iterator it = --segments_.upper_bound(utc);
+        if (it == segments_.end()) return Segment::ptr_t();
+        utc = it->first;
+        return it->second;
+    }
+    static boost::posix_time::ptime GetStartedAt(std::string str, const boost::posix_time::ptime now = boost::posix_time::microsec_clock::universal_time()) {
+        if (boost::algorithm::istarts_with(str, "now-")) {
+            try {
+                double delaySec = boost::lexical_cast<double>(str.substr(4));
+                boost::posix_time::microseconds delay(static_cast<long long>(delaySec * 1000 * 1000));
+                return now - delay;
+            } catch (boost::bad_lexical_cast) {
+                return boost::posix_time::ptime();
+            }
+        }
+        std::string tzd = "";
+        std::string::size_type pos = str.find_last_of("TtZz+-");
+        if (pos != std::string::npos && str[pos] != 'T' && str[pos] != 't') {
+            tzd = str.substr(pos);
+            str = str.substr(0, pos);
+        }
+        boost::posix_time::ptime time;
+        bool extended = false;
+        try {
+            time = boost::posix_time::from_iso_string(str);
+        } catch (boost::bad_lexical_cast) {
+        }
+        if (time.is_special()) {
+            try {
+                time = boost::posix_time::from_iso_extended_string(str);
+                extended = true;
+            } catch (boost::bad_lexical_cast) {
+            }
+        }
+        if (time.is_special() || tzd[0] == 'z' || tzd[0] == 'Z') {
+            return time;
+        } else if (tzd[0] == '+' || tzd[0] == '-') {
+            try {
+                int32_t hours = 0, minutes = 0;
+                if (extended) {
+                    std::vector<std::string> tz;
+                    boost::algorithm::split(tz, tzd, boost::algorithm::is_any_of(":"));
+                    if (tz.size() >= 1) hours = boost::lexical_cast<int32_t>(tz[0]);
+                    if (tz.size() >= 2) minutes = boost::lexical_cast<int32_t>(tz[1]);
+                } else {
+                    hours = boost::lexical_cast<int32_t>(tzd.substr(0, 3));
+                    minutes = boost::lexical_cast<int32_t>(tzd.substr(3));
+                }
+                return time - boost::posix_time::time_duration(hours, minutes, 0);
+            } catch (boost::bad_lexical_cast) {
+            }
+        }
+        const boost::posix_time::ptime local = boost::date_time::c_local_adjustor<boost::posix_time::ptime>::utc_to_local(now);
+        const boost::posix_time::posix_time_system::time_duration_type td = local - now;
+        return time - td;
     }
 };
+
+//----------------------------------------------------------------------------
+/// @class LoopRec::Impl::LoopRecSender
+//----------------------------------------------------------------------------
+class LoopRec::Impl::LoopRecSender : public boost::enable_shared_from_this<LoopRecSender>, private boost::noncopyable {
+    LoopRec::Impl* owner_;
+    Sender::ptr_t sender_;
+    const StreamOption option_;
+    boost::thread thread_;
+public:
+    LoopRecSender(LoopRec::Impl* owner, int sfd, const SendOption& sendOption, const StreamOption& streamOption)
+        : owner_(owner), sender_(Sender::Create(sfd, sendOption)), option_(streamOption), thread_() {
+    }
+    virtual ~LoopRecSender() {
+        sender_.reset();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+    virtual void Start() {
+        thread_ = boost::thread(&LoopRecSender::Thread, this);
+    }
+protected:
+    virtual void RemoveThis() {
+        boost::thread thread([](LoopRec::Impl* owner, looprec_sender_ptr_t sender) {
+            owner->RemoveSender(sender);
+        }, owner_, shared_from_this());
+    }
+    virtual void Thread() {
+        //const std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
+        //const boost::posix_time::ptime startedAt = LoopRec::Impl::GetStartedAt(option_.Get<std::string>("at"));
+        //if (startedAt.is_special()) {
+        //    RemoveThis();
+        //    return;
+        //}
+        //boost::posix_time::ptime at = startedAt;
+        //Segment::ptr_t segment = owner_->GetSegment(at);
+        //while (sender_ && sender_->IsConnected()) {
+        //    std::chrono::steady_clock::time_point tack = std::chrono::steady_clock::now();
+        //    if (!segment) {
+        //        at += boost::posix_time::microseconds((tack - tick).count() / 1000); // nanosec to microsec
+        //        segment = owner_->GetSegment(at);
+        //        if (!segment) {
+        //            boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
+        //            continue;
+        //        }
+        //    }
+        //    break;
+        //}
+        RemoveThis();
+    }
+};
+
+void LoopRec::Impl::CreateSender(int sfd, const SendOption& sendOption, const StreamOption& streamOption) {
+    looprec_sender_ptr_t sender(new LoopRecSender(this, sfd, sendOption, streamOption));
+    boost::mutex::scoped_lock lock(mutex_);
+    senders_.push_back(sender);
+    lock.unlock();
+    sender->Start();
+}
 
 LoopRec::map_t LoopRec::Create(const Json::Node& loopRecs, const std::string& app) {
     map_t map;
@@ -278,9 +417,15 @@ bool LoopRec::Initialize() {
 void LoopRec::Destroy() {
     return pimpl_->Destroy();
 }
+bool LoopRec::IsAcceptable(const StreamOption& streamOption) const {
+    return pimpl_->IsAcceptable(streamOption);
+}
 bool LoopRec::OnReceive(const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
     return pimpl_->OnReceive(option, buf, discrete);
 }
 bool LoopRec::OnDisconnected(const ReceiveOption& option) {
     return pimpl_->OnDisconnected(option);
+}
+void LoopRec::CreateSender(int sfd, const SendOption& sendOption, const StreamOption& streamOption) {
+    return pimpl_->CreateSender(sfd, sendOption, streamOption);
 }

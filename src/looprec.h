@@ -15,6 +15,8 @@ public:
     virtual ~LoopRec();
     virtual bool Initialize();
     virtual void Destroy();
+    virtual bool IsAcceptable(const StreamOption& streamOption) const;
+    virtual void CreateSender(int sfd, const SendOption& sendOption, const StreamOption& streamOption);
 protected:
     virtual bool OnReceive(const ReceiveOption& option, const Event::buf_t& buf, bool discrete) override;
     virtual bool OnDisconnected(const ReceiveOption& option) override;

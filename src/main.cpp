@@ -224,8 +224,14 @@ protected:
             option.SetSockOpts(res.second["option"], ListenOption::s_sockopts_pre);
             return true;
         } else { // "request"
-            Receiver::ptr_t receiver = FindReceiver(name);
-            if (!receiver) return false; // not exists
+            if (streamOption.HasExcept("at", "now")) {
+                LoopRec::map_t::const_iterator loopRec = loopRecs_.find(name);
+                if (loopRec == loopRecs_.end() || !loopRec->second) return false;
+                if (!loopRec->second->IsAcceptable(streamOption)) return false;
+            } else {
+                Receiver::ptr_t receiver = FindReceiver(name);
+                if (!receiver) return false; // not exists
+            }
             res_t res = Authorize("on_pre_accept", "play", peer, streamOption);
             if (!res.first) return false;
             option.SetSockOpts(conf_["option"], ListenOption::s_sockopts_pre); // "pre" options
@@ -264,8 +270,6 @@ protected:
             Logger::Info(boost::format("<%s> accept publish [ %s ] from %s") % app() % name % opt["peer"]);
             return true;
         } else { // "request"
-            Receiver::ptr_t receiver = FindReceiver(name);
-            if (!receiver) return false; // not exists
             SendOption opt;
             opt["app"] = app();
             opt["name"] = name;
@@ -275,8 +279,16 @@ protected:
             opt.SetSockOpts(conf_["option"], SendOption::s_sockopts); // "post" options
             opt.SetSockOpts(conf_["play"]["option"], SendOption::s_sockopts);
             opt.SetSockOpts(res.second["option"], SendOption::s_sockopts);
-            Event::ptr_t sender(ReflectSender::Create(sfd, opt));
-            receiver->AddEvent(sender, 0, true);
+            if (streamOption.HasExcept("at", "now")) {
+                LoopRec::map_t::const_iterator loopRec = loopRecs_.find(name);
+                if (loopRec == loopRecs_.end() || !loopRec->second) return false;
+                loopRec->second->CreateSender(sfd, opt, streamOption);
+            } else {
+                Receiver::ptr_t receiver = FindReceiver(name);
+                if (!receiver) return false; // not exists
+                Event::ptr_t sender(ReflectSender::Create(sfd, opt));
+                receiver->AddEvent(sender, 0, true);
+            }
             Logger::Info(boost::format("<%s> accept request [ %s ] from %s") % app() % name % opt["peer"]);
             return true;
         }
