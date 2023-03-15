@@ -171,11 +171,11 @@ public:
         int64_t offset = offset_ms / idx_interval_.count();
         idx_file_.seekg(offset * sizeof(std::streamoff));
         if (idx_file_.read(reinterpret_cast<char*>(&pos_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
-            Logger::Warning(boost::format("%s : failed to read segment index (%s[ms]) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
+            Logger::Trace(boost::format("%s : failed to read segment index (%s[ms]) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
             return false;
         }
         if (idx_file_.read(reinterpret_cast<char*>(&next_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
-            Logger::Warning(boost::format("%s : failed to read segment index (%s[ms] next) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
+            Logger::Trace(boost::format("%s : failed to read segment index (%s[ms] next) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
             return false;
         }
         dat_file_.open(segment_->DatPath().string(), std::ios::in | std::ios::binary);
@@ -478,6 +478,7 @@ protected:
                     reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, tack - boost::chrono::nanoseconds(offset_ns)));
                 }
                 if (!reader || !reader->Initialize(offset_ns / 1000 / 1000)) {
+                    reader.reset();
                     if (gap == "break") {
                         break;
                     }
