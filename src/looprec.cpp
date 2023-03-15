@@ -78,11 +78,11 @@ class SegmentWriter
     const Segment::ptr_t segment_;
     std::ofstream dat_file_;
     std::ofstream idx_file_;
-    std::chrono::milliseconds idx_interval_;
-    std::chrono::steady_clock::time_point idx_time_;
+    boost::chrono::milliseconds idx_interval_;
+    boost::chrono::steady_clock::time_point idx_time_;
 public:
     typedef boost::shared_ptr<SegmentWriter> ptr_t;
-    SegmentWriter(const std::string& log_prefix, Segment::ptr_t segment, const std::chrono::milliseconds& idx_interval, const std::chrono::steady_clock::time_point& idx_time)
+    SegmentWriter(const std::string& log_prefix, Segment::ptr_t segment, const boost::chrono::milliseconds& idx_interval, const boost::chrono::steady_clock::time_point& idx_time)
         : log_prefix_(log_prefix), segment_(segment), dat_file_(), idx_file_(), idx_interval_(idx_interval), idx_time_(idx_time) {
     }
     virtual ~SegmentWriter() {
@@ -105,7 +105,7 @@ public:
     virtual void Destroy() {
         Close();
     }
-    virtual bool Write(const std::chrono::steady_clock::time_point& tick, const Event::buf_t& buf) {
+    virtual bool Write(const boost::chrono::steady_clock::time_point& tick, const Event::buf_t& buf) {
         if (!dat_file_.is_open()) return false;
         dat_file_.write(&buf.at(0), buf.size());
         bool flush = false;
@@ -143,8 +143,8 @@ class SegmentReader
     const Segment::ptr_t segment_;
     std::ifstream dat_file_;
     std::ifstream idx_file_;
-    std::chrono::milliseconds idx_interval_;
-    std::chrono::steady_clock::time_point base_time_;
+    boost::chrono::milliseconds idx_interval_;
+    boost::chrono::steady_clock::time_point base_time_;
     std::streamoff pos_;
     std::streamoff next_;
     int64_t read_;
@@ -152,7 +152,7 @@ class SegmentReader
 public:
     typedef boost::scoped_ptr<SegmentReader> ptr_t;
     SegmentReader(const std::string& log_prefix, Segment::ptr_t segment,
-        const std::chrono::milliseconds& idx_interval, const std::chrono::steady_clock::time_point base_time)
+        const boost::chrono::milliseconds& idx_interval, const boost::chrono::steady_clock::time_point base_time)
         : log_prefix_(log_prefix), segment_(segment), dat_file_(), idx_file_()
         , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), offset_ns_(0) {
     }
@@ -170,11 +170,11 @@ public:
         }
         int64_t offset = offset_ms / idx_interval_.count();
         idx_file_.seekg(offset * sizeof(std::streamoff));
-        if (idx_file_.read(reinterpret_cast<char*>(&pos_), sizeof(std::streamoff)).gcount() < sizeof(std::streamoff)) {
+        if (idx_file_.read(reinterpret_cast<char*>(&pos_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
             Logger::Warning(boost::format("%s : failed to read segment index (%s[ms]) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
             return false;
         }
-        if (idx_file_.read(reinterpret_cast<char*>(&next_), sizeof(std::streamoff)).gcount() < sizeof(std::streamoff)) {
+        if (idx_file_.read(reinterpret_cast<char*>(&next_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
             Logger::Warning(boost::format("%s : failed to read segment index (%s[ms] next) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
             return false;
         }
@@ -198,7 +198,7 @@ public:
         }
     }
     virtual bool Read(Event::buf_t& buf) {
-        std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
+        boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
         int64_t elapsed_ns = (tick - base_time_).count();
         if (elapsed_ns < 0) {
             //std::cout << "read wait: " << (-elapsed_ns / 1000 / 1000) << "[ms]" << std::endl;
@@ -223,7 +223,7 @@ public:
         read_ += buf.size();
         while (pos_ + read_ >= next_) {
             std::streamoff next = 0;
-            if (idx_file_.read(reinterpret_cast<char*>(&next), sizeof(std::streamoff)).gcount() < sizeof(std::streamoff)) {
+            if (idx_file_.read(reinterpret_cast<char*>(&next), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
                 break;
             }
             if (next_ > pos_) {
@@ -235,7 +235,7 @@ public:
         }
         return true;
     }
-    const std::chrono::steady_clock::time_point& BaseTime() const {
+    const boost::chrono::steady_clock::time_point& BaseTime() const {
         return base_time_;
     }
 };
@@ -290,10 +290,10 @@ class LoopRec::Impl
     boost::filesystem::path dir_;
     std::string dat_ext_;
     std::string idx_ext_;
-    std::chrono::seconds segment_duration_;
-    std::chrono::seconds total_duration_;
-    std::chrono::milliseconds idx_interval_;
-    std::chrono::steady_clock::time_point segment_time_;
+    boost::chrono::seconds segment_duration_;
+    boost::chrono::seconds total_duration_;
+    boost::chrono::milliseconds idx_interval_;
+    boost::chrono::steady_clock::time_point segment_time_;
     mutable boost::mutex mutex_;
     SenderRunner::vector_t sender_runners_;
 public:
@@ -312,9 +312,9 @@ public:
             idx_ext_ = "." + boost::trim_left_copy_if(conf_["index_extension"].to<std::string>("idx"), boost::is_any_of("."));
             if (dat_ext_ == idx_ext_) idx_ext_ += "_idx";
             uint32_t segdur = std::max<uint32_t>(conf_["segment_duration"].to<uint32_t>(600), 10);
-            segment_duration_ = std::chrono::seconds(segdur);
-            total_duration_ = std::chrono::seconds(std::max<uint32_t>(conf_["total_duration"].to<uint32_t>(3600), segdur));
-            idx_interval_ = std::chrono::milliseconds(std::max<uint32_t>(conf_["index_interval"].to<uint32_t>(100), 1));
+            segment_duration_ = boost::chrono::seconds(segdur);
+            total_duration_ = boost::chrono::seconds(std::max<uint32_t>(conf_["total_duration"].to<uint32_t>(3600), segdur));
+            idx_interval_ = boost::chrono::milliseconds(std::max<uint32_t>(conf_["index_interval"].to<uint32_t>(100), 1));
             if (dir_.empty()) dir_ = "./" + name_;
             boost::filesystem::create_directories(dir_);
             for (boost::filesystem::directory_iterator it(dir_), end; it != end; ++it) {
@@ -363,7 +363,7 @@ public:
         sender_runner->Initialize();
     }
     virtual bool OnReceive(const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
-        std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
+        boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
         std::string suffix = "Z"; // UTC
         if (writer_ && tick >= segment_time_) {
             writer_->Close();
@@ -441,10 +441,10 @@ protected:
         Event::buf_t buf(bufsiz);
         SegmentReader::ptr_t reader;
         time_segment_t segment;
-        std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
+        boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
         while (sender->IsConnected()) {
             if (!reader) {
-                std::chrono::steady_clock::time_point tack = std::chrono::steady_clock::now();
+                boost::chrono::steady_clock::time_point tack = boost::chrono::steady_clock::now();
                 boost::posix_time::ptime at = startedAt + boost::posix_time::microseconds((tack - tick).count() / 1000); // nanosec to microsec
                 if (!segment.second) {
                     segment = GetSegment(at);
@@ -470,12 +470,12 @@ protected:
                         continue;
                     }
                     Logger::Debug(boost::format("%s : skip : %lld[ms]") % log_prefix % (gap_ns / 1000 / 1000));
-                    tick -= std::chrono::nanoseconds(gap_ns);
+                    tick -= boost::chrono::nanoseconds(gap_ns);
                     continue;
                 }
                 int64_t offset_ns = (at - segment.first).total_nanoseconds();
-                if (std::chrono::nanoseconds(offset_ns) < segment_duration_) {
-                    reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, tack - std::chrono::nanoseconds(offset_ns)));
+                if (boost::chrono::nanoseconds(offset_ns) < segment_duration_) {
+                    reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, tack - boost::chrono::nanoseconds(offset_ns)));
                 }
                 if (!reader || !reader->Initialize(offset_ns / 1000 / 1000)) {
                     if (gap == "break") {
@@ -513,7 +513,7 @@ protected:
                 continue;
             }
             std::string err = sender->GetErrMsg();
-            Logger::Info(boost::format("%s : failed : %s") % log_prefix % err);
+            Logger::Info(boost::format("%s : %s") % log_prefix % err);
             break;
         }
         Logger::Info(boost::format("%s : done : %s") % log_prefix % option(','));
