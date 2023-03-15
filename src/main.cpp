@@ -91,6 +91,7 @@ public:
     virtual bool Initialize() {
         stats_ = conf_["publish"]["stats"].to<int32_t>(0);
         stats_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(stats_);
+        loopRecs_ = LoopRec::Create(conf_["loopRecs"], app());
         ListenOption opt;
         opt["host"] = conf_["host"].to<std::string>();
         opt["port"] = conf_["port"].to<std::string>();
@@ -105,7 +106,6 @@ public:
         listener->AddEvent(shared_from_this(), 0, false);
         listener_.swap(listener);
         Logger::Info(boost::format("<%s> listen %s:%s") % app() % opt["host"] % opt["port"]);
-        loopRecs_ = LoopRec::Create(conf_["loopRecs"], app());
         return true;
     }
     virtual void Destroy() {
@@ -453,7 +453,7 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 2, 1)
+#define VERSION MAKE_VERSION(0, 2, 2)
 
 //----------------------------------------------------------------------------
 /// @fn main

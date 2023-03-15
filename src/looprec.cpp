@@ -140,7 +140,6 @@ protected:
 class SegmentReader
 {
     const std::string log_prefix_;
-    const boost::posix_time::ptime utc_;
     const Segment::ptr_t segment_;
     std::ifstream dat_file_;
     std::ifstream idx_file_;
@@ -152,9 +151,9 @@ class SegmentReader
     int64_t offset_ns_;
 public:
     typedef boost::scoped_ptr<SegmentReader> ptr_t;
-    SegmentReader(const std::string& log_prefix, const boost::posix_time::ptime& utc, Segment::ptr_t segment,
+    SegmentReader(const std::string& log_prefix, Segment::ptr_t segment,
         const std::chrono::milliseconds& idx_interval, const std::chrono::steady_clock::time_point base_time)
-        : log_prefix_(log_prefix), utc_(utc), segment_(segment), dat_file_(), idx_file_()
+        : log_prefix_(log_prefix), segment_(segment), dat_file_(), idx_file_()
         , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), offset_ns_(0) {
     }
     virtual ~SegmentReader() {
@@ -162,11 +161,6 @@ public:
     }
     virtual bool Initialize(int64_t offset_ms) {
         if (!segment_) {
-            return false;
-        }
-        dat_file_.open(segment_->DatPath().string(), std::ios::in | std::ios::binary);
-        if (!dat_file_.is_open()) {
-            Logger::Warning(boost::format("%s : failed to open segment [%s]") % log_prefix_ % segment_->DatPath().filename().string());
             return false;
         }
         idx_file_.open(segment_->IdxPath().string(), std::ios::in | std::ios::binary);
@@ -177,11 +171,16 @@ public:
         int64_t offset = offset_ms / idx_interval_.count();
         idx_file_.seekg(offset * sizeof(std::streamoff));
         if (idx_file_.read(reinterpret_cast<char*>(&pos_), sizeof(std::streamoff)).gcount() < sizeof(std::streamoff)) {
-            Logger::Warning(boost::format("%s : failed to read segment index (pos) [%s]") % log_prefix_ % segment_->IdxPath().filename().string());
+            Logger::Warning(boost::format("%s : failed to read segment index (%s[ms]) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
             return false;
         }
         if (idx_file_.read(reinterpret_cast<char*>(&next_), sizeof(std::streamoff)).gcount() < sizeof(std::streamoff)) {
-            Logger::Warning(boost::format("%s : failed to read segment index (next) [%s]") % log_prefix_ % segment_->IdxPath().filename().string());
+            Logger::Warning(boost::format("%s : failed to read segment index (%s[ms] next) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
+            return false;
+        }
+        dat_file_.open(segment_->DatPath().string(), std::ios::in | std::ios::binary);
+        if (!dat_file_.is_open()) {
+            Logger::Warning(boost::format("%s : failed to open segment [%s]") % log_prefix_ % segment_->DatPath().filename().string());
             return false;
         }
         Logger::Debug(boost::format("%s : open segment [%s]") % log_prefix_ % segment_->DatPath().filename().string());
@@ -238,9 +237,6 @@ public:
     }
     const std::chrono::steady_clock::time_point& BaseTime() const {
         return base_time_;
-    }
-    const boost::posix_time::ptime& Utc() const {
-        return utc_;
     }
 };
 
@@ -435,52 +431,81 @@ protected:
     }
     virtual void Send(Sender::ptr_t sender, const StreamOption& option) {
         const std::string log_prefix = (boost::format("%s > [ %s ]") % log_prefix_ % sender->GetOption().Get<std::string>("peer")).str();
-        const std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
         const boost::posix_time::ptime startedAt = GetStartedAt(option.Get<std::string>("at"));
         if (startedAt.is_special()) {
             return;
         }
         const int32_t bufsiz = std::min<int32_t>(option.Get<int32_t>("bufsiz", 188 * 7), 1456);
-        Logger::Info(boost::format("%s : started : %s") % log_prefix % option());
+        const std::string gap = option.Get<std::string>("gap", "skip");
+        Logger::Info(boost::format("%s : started : %s") % log_prefix % option(','));
         Event::buf_t buf(bufsiz);
         SegmentReader::ptr_t reader;
+        time_segment_t segment;
+        std::chrono::steady_clock::time_point tick = std::chrono::steady_clock::now();
         while (sender->IsConnected()) {
             if (!reader) {
                 std::chrono::steady_clock::time_point tack = std::chrono::steady_clock::now();
                 boost::posix_time::ptime at = startedAt + boost::posix_time::microseconds((tack - tick).count() / 1000); // nanosec to microsec
-                time_segment_t segment = GetSegment(at);
+                if (!segment.second) {
+                    segment = GetSegment(at);
+                }
                 if (segment.first.is_special() || !segment.second) {
+                    if (gap == "break") {
+                        break;
+                    }
+                    Logger::Trace(boost::format("%s : missing segment") % log_prefix);
+                    segment.second.reset();
                     boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
                     continue;
                 }
                 if (segment.first > at) {
-                    int64_t wait_ns = (segment.first - at).total_nanoseconds();
-                    wait_ns = std::min<int64_t>(wait_ns, 1000ll * 1000 * 100); // 100[ms]
-                    boost::this_thread::sleep_for(boost::chrono::nanoseconds(wait_ns));
+                    if (gap == "break") {
+                        break;
+                    }
+                    int64_t gap_ns = (segment.first - at).total_nanoseconds();
+                    if (gap == "wait") {
+                        segment.second.reset();
+                        Logger::Trace(boost::format("%s : waiting next segment : %lld[ms]") % log_prefix % (gap_ns / 1000 / 1000));
+                        boost::this_thread::sleep_for(boost::chrono::nanoseconds(std::min<int64_t>(gap_ns, 1000ll * 1000 * 100)));
+                        continue;
+                    }
+                    Logger::Debug(boost::format("%s : skip : %lld[ms]") % log_prefix % (gap_ns / 1000 / 1000));
+                    tick -= std::chrono::nanoseconds(gap_ns);
                     continue;
                 }
                 int64_t offset_ns = (at - segment.first).total_nanoseconds();
-                if (std::chrono::nanoseconds(offset_ns) >= segment_duration_) {
-                    boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
+                if (std::chrono::nanoseconds(offset_ns) < segment_duration_) {
+                    reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, tack - std::chrono::nanoseconds(offset_ns)));
+                }
+                if (!reader || !reader->Initialize(offset_ns / 1000 / 1000)) {
+                    if (gap == "break") {
+                        break;
+                    }
+                    if (gap == "wait") {
+                        segment.second.reset();
+                        boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
+                        continue;
+                    }
+                    segment = GetSegment(segment.first, true);
                     continue;
                 }
-                reader.reset(new SegmentReader(log_prefix, segment.first, segment.second, idx_interval_, tack - std::chrono::nanoseconds(offset_ns)));
-                if (!reader->Initialize(offset_ns / 1000 / 1000)) {
-                    reader.reset();
-                    boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
-                    continue;
-                }
+                segment.second.reset();
             }
             buf.resize(bufsiz);
             if (!reader->Read(buf)) {
-                time_segment_t segment = GetSegment(reader->Utc(), true);
+                segment = GetSegment(segment.first, true); // switch to next segment
                 if (segment.second && segment.second->Continuous()) {
-                    reader.reset(new SegmentReader(log_prefix, segment.first, segment.second, idx_interval_, reader->BaseTime() + segment_duration_));
+                    reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, reader->BaseTime() + segment_duration_));
+                    segment.second.reset();
                     if (!reader->Initialize(0)) {
                         reader.reset();
                     }
                 } else {
                     reader.reset();
+                    segment.second.reset();
+                    if (gap == "break") {
+                        break;
+                    }
                 }
                 continue;
             }
@@ -491,7 +516,7 @@ protected:
             Logger::Info(boost::format("%s : failed : %s") % log_prefix % err);
             break;
         }
-        Logger::Info(boost::format("%s : done : %s") % log_prefix % option());
+        Logger::Info(boost::format("%s : done : %s") % log_prefix % option(','));
     }
     static boost::posix_time::ptime GetStartedAt(std::string str, const boost::posix_time::ptime now = boost::posix_time::microsec_clock::universal_time()) {
         if (boost::algorithm::istarts_with(str, "now-")) {
