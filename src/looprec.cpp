@@ -494,7 +494,7 @@ protected:
                         continue;
                     }
                     Logger::Debug(boost::format("%s : skip : %lld[ms]") % log_prefix % (gap_ns / 1000 / 1000));
-                    base_time -= boost::chrono::nanoseconds(gap_ns);
+                    base_time -= boost::chrono::nanoseconds(gap_ns / speed);
                     continue;
                 }
                 int64_t offset_ns = (at - segment.first).total_nanoseconds();
