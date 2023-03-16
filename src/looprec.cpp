@@ -9,6 +9,25 @@
 static const std::string CONTINUOUS = "=";
 
 //----------------------------------------------------------------------------
+///
+//----------------------------------------------------------------------------
+class Speed {
+    double speed_;
+    bool is_normal_;
+public:
+    explicit Speed(const double& speed) : speed_(speed), is_normal_(std::abs(speed - 1.0) < std::numeric_limits<double>::epsilon()) {}
+    template <typename Type> Type Mul(const Type& val) const { return is_normal_ ? val : static_cast<Type>(val * speed_); }
+    template <typename Type> Type Div(const Type& val) const { return is_normal_ ? val : static_cast<Type>(val / speed_); }
+    bool IsNormal() const { return is_normal_; }
+    bool IsFast() const { return !is_normal_ && speed_ > 1; }
+    bool IsSlow() const { return !is_normal_ && speed_ < 1; }
+};
+template <typename Type> Type operator*(const Type& val, const Speed& speed) { return speed.Mul(val); }
+template <typename Type> Type operator/(const Type& val, const Speed& speed) { return speed.Div(val); }
+template <typename Type> Type& operator*=(Type& val, const Speed& speed) { val = speed.Mul(val); return val; }
+template <typename Type> Type& operator/=(Type& val, const Speed& speed) { val = speed.Div(val); return val; }
+
+//----------------------------------------------------------------------------
 /// @class Segment
 //----------------------------------------------------------------------------
 class Segment : private boost::noncopyable
@@ -141,6 +160,7 @@ class SegmentReader
 {
     const std::string log_prefix_;
     const Segment::ptr_t segment_;
+    Speed speed_;
     std::ifstream dat_file_;
     std::ifstream idx_file_;
     boost::chrono::milliseconds idx_interval_;
@@ -151,9 +171,9 @@ class SegmentReader
     int64_t offset_ns_;
 public:
     typedef boost::scoped_ptr<SegmentReader> ptr_t;
-    SegmentReader(const std::string& log_prefix, Segment::ptr_t segment,
-        const boost::chrono::milliseconds& idx_interval, const boost::chrono::steady_clock::time_point base_time)
-        : log_prefix_(log_prefix), segment_(segment), dat_file_(), idx_file_()
+    SegmentReader(const std::string& log_prefix, Segment::ptr_t segment, const Speed& speed,
+        const boost::chrono::milliseconds& idx_interval, const boost::chrono::steady_clock::time_point& base_time)
+        : log_prefix_(log_prefix), segment_(segment), speed_(speed), dat_file_(), idx_file_()
         , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), offset_ns_(0) {
     }
     virtual ~SegmentReader() {
@@ -197,20 +217,19 @@ public:
             Logger::Debug(boost::format("%s : close segment [%s]") % log_prefix_ % segment_->DatPath().filename().string());
         }
     }
-    virtual bool Read(Event::buf_t& buf) {
-        boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
+    virtual bool Read(const boost::chrono::steady_clock::time_point& tick, Event::buf_t& buf) {
         int64_t elapsed_ns = (tick - base_time_).count();
         if (elapsed_ns < 0) {
-            //std::cout << "read wait: " << (-elapsed_ns / 1000 / 1000) << "[ms]" << std::endl;
+            buf.resize(0);
             boost::this_thread::sleep_for(boost::chrono::nanoseconds(-elapsed_ns));
-            return Read(buf);
+            return true;
         }
         buf.resize(dat_file_.read(&buf.at(0), buf.size()).gcount());
         if (buf.empty()) {
             return false;
         }
         if (next_ > pos_) {
-            int64_t reference_ns = offset_ns_  + 1000ll * 1000 * idx_interval_.count() * read_ / (next_ - pos_);
+            int64_t reference_ns = (offset_ns_ + 1000ll * 1000 * idx_interval_.count() * read_ / (next_ - pos_)) / speed_;
             if (reference_ns > elapsed_ns) {
                 if (reference_ns - elapsed_ns > 1000ll * 1000 * 100) {
                     Logger::Warning(boost::format("%s : too long wait : %lld[ms]") % log_prefix_ % ((reference_ns - elapsed_ns) / 1000 / 1000));
@@ -251,13 +270,14 @@ class LoopRec::Impl
     class SenderRunner : public boost::enable_shared_from_this<SenderRunner>, private boost::noncopyable {
         LoopRec::Impl* pimpl_;
         Sender::ptr_t sender_;
-        const StreamOption option_;
+        StreamOption option_;
         boost::thread thread_;
     public:
         typedef boost::shared_ptr<SenderRunner> ptr_t;
         typedef std::vector<ptr_t> vector_t;
         SenderRunner(LoopRec::Impl* pimpl, int sfd, const SendOption& sendOption, const StreamOption& streamOption)
             : pimpl_(pimpl), sender_(Sender::Create(sfd, sendOption)), option_(streamOption), thread_() {
+            option_.Synonym("speed", "x");
         }
         virtual ~SenderRunner() {
             Destroy();
@@ -437,15 +457,19 @@ protected:
         }
         const int32_t bufsiz = std::min<int32_t>(option.Get<int32_t>("bufsiz", 188 * 7), 1456);
         const std::string gap = option.Get<std::string>("gap", "skip");
+        const Speed speed(std::max<double>(option.Get<double>("speed", 1), 0.1));
         Logger::Info(boost::format("%s : started : %s") % log_prefix % option(','));
         Event::buf_t buf(bufsiz);
         SegmentReader::ptr_t reader;
         time_segment_t segment;
-        boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
+        boost::chrono::steady_clock::time_point base_time = boost::chrono::steady_clock::now();
         while (sender->IsConnected()) {
+            boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
             if (!reader) {
-                boost::chrono::steady_clock::time_point tack = boost::chrono::steady_clock::now();
-                boost::posix_time::ptime at = startedAt + boost::posix_time::microseconds((tack - tick).count() / 1000); // nanosec to microsec
+                boost::posix_time::ptime at = startedAt + boost::posix_time::microseconds((tick - base_time).count() * speed / 1000); // nanosec to microsec
+                if (!CheckPlaybackPosition(at, speed, log_prefix)) {
+                    break;
+                }
                 if (!segment.second) {
                     segment = GetSegment(at);
                 }
@@ -470,12 +494,12 @@ protected:
                         continue;
                     }
                     Logger::Debug(boost::format("%s : skip : %lld[ms]") % log_prefix % (gap_ns / 1000 / 1000));
-                    tick -= boost::chrono::nanoseconds(gap_ns);
+                    base_time -= boost::chrono::nanoseconds(gap_ns);
                     continue;
                 }
                 int64_t offset_ns = (at - segment.first).total_nanoseconds();
                 if (boost::chrono::nanoseconds(offset_ns) < segment_duration_) {
-                    reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, tack - boost::chrono::nanoseconds(offset_ns)));
+                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, tick - boost::chrono::nanoseconds(offset_ns)));
                 }
                 if (!reader || !reader->Initialize(offset_ns / 1000 / 1000)) {
                     reader.reset();
@@ -493,10 +517,14 @@ protected:
                 segment.second.reset();
             }
             buf.resize(bufsiz);
-            if (!reader->Read(buf)) {
+            if (!reader->Read(tick, buf)) {
+                boost::posix_time::ptime at = startedAt + boost::posix_time::microseconds((tick - base_time).count() * speed / 1000); // nanosec to microsec
+                if (!CheckPlaybackPosition(at, speed, log_prefix)) {
+                    break;
+                }
                 segment = GetSegment(segment.first, true); // switch to next segment
                 if (segment.second && segment.second->Continuous()) {
-                    reader.reset(new SegmentReader(log_prefix, segment.second, idx_interval_, reader->BaseTime() + segment_duration_));
+                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, reader->BaseTime() + boost::chrono::nanoseconds(segment_duration_.count() * 1000ll * 1000 * 1000 / speed)));
                     segment.second.reset();
                     if (!reader->Initialize(0)) {
                         reader.reset();
@@ -510,7 +538,7 @@ protected:
                 }
                 continue;
             }
-            if (sender->Send(buf)) {
+            if (buf.empty() || sender->Send(buf)) {
                 continue;
             }
             std::string err = sender->GetErrMsg();
@@ -518,6 +546,21 @@ protected:
             break;
         }
         Logger::Info(boost::format("%s : done : %s") % log_prefix % option(','));
+    }
+    const bool CheckPlaybackPosition(const boost::posix_time::ptime& at, const Speed& speed, const std::string& log_prefix) {
+        if (speed.IsNormal()) {
+            return true;
+        }
+        const boost::posix_time::ptime now = boost::posix_time::microsec_clock::universal_time();
+        if (speed.IsSlow() && at + boost::posix_time::seconds(total_duration_.count()) < now) {
+            Logger::Warning(boost::format("%s : got out of the loop recording range") % log_prefix);
+            return false;
+        }
+        if (speed.IsFast() && now < at) {
+            Logger::Warning(boost::format("%s : reached the live position") % log_prefix);
+            return false;
+        }
+        return true;
     }
     static boost::posix_time::ptime GetStartedAt(std::string str, const boost::posix_time::ptime now = boost::posix_time::microsec_clock::universal_time()) {
         if (boost::algorithm::istarts_with(str, "now-")) {
