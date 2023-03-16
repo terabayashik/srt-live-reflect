@@ -499,7 +499,7 @@ protected:
                 }
                 int64_t offset_ns = (at - segment.first).total_nanoseconds();
                 if (boost::chrono::nanoseconds(offset_ns) < segment_duration_) {
-                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, tick - boost::chrono::nanoseconds(offset_ns)));
+                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, tick - boost::chrono::nanoseconds(offset_ns / speed)));
                 }
                 if (!reader || !reader->Initialize(offset_ns / 1000 / 1000)) {
                     reader.reset();
