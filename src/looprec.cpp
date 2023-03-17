@@ -272,14 +272,16 @@ class LoopRec::Impl
         Sender::ptr_t sender_;
         StreamOption option_;
         boost::thread thread_;
+        bool destruct_;
     public:
         typedef boost::shared_ptr<SenderRunner> ptr_t;
         typedef std::vector<ptr_t> vector_t;
         SenderRunner(LoopRec::Impl* pimpl, int sfd, const SendOption& sendOption, const StreamOption& streamOption)
-            : pimpl_(pimpl), sender_(Sender::Create(sfd, sendOption)), option_(streamOption), thread_() {
+            : pimpl_(pimpl), sender_(Sender::Create(sfd, sendOption)), option_(streamOption), thread_(), destruct_(false) {
             option_.Synonym("speed", "x");
         }
         virtual ~SenderRunner() {
+            destruct_ = true;
             Destroy();
         }
         virtual bool Initialize() {
@@ -287,7 +289,10 @@ class LoopRec::Impl
             return true;
         }
         virtual void Destroy() {
-            sender_.reset();
+            if (sender_) {
+                sender_->Destroy();
+                sender_.reset();
+            }
             if (thread_.joinable()) {
                 thread_.join();
             }
@@ -295,7 +300,8 @@ class LoopRec::Impl
     protected:
         virtual void Thread() {
             pimpl_->Send(sender_, option_);
-            boost::thread thread([](LoopRec::Impl* pimpl, ptr_t sender_runner) {
+            if (destruct_) return;
+            boost::thread([](LoopRec::Impl* pimpl, ptr_t sender_runner) {
                 pimpl->RemoveSender(sender_runner);
             }, pimpl_, shared_from_this());
         }
