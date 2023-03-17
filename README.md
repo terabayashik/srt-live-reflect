@@ -1,7 +1,7 @@
 # srt-live-reflect
 reflect srt live stream
 
-## build
+## § build
 ### requirements
 * libsrt
   * vcpkg install libsrt:x86-windows-static
@@ -11,13 +11,13 @@ reflect srt live stream
   * vcpkg install curl:x64-windows-static
 * boost
 
-## args
-### conf=*{{path to conf file}}*
+## § command line arguments
+### conf=**{{path to configuration file}}**
 * **default** : *"./srt-live-reflect.conf"*
 
-## conf
+## § configuration file
 ### srt-live-stream.conf (JSON)
-* allow c style, c++ style comment and trailing commas
+* acccepts C style, C++ style comment and trailing commas
 ```json
 {
   "name": "srt-live-reflect",
@@ -67,19 +67,47 @@ reflect srt live stream
       ],
       // "on_pre_accept": "http://127.0.0.1:8090/on_pre_accept_play",
       // "on_accept": "http://127.0.0.1:8090/on_accept_play"
-    }
+    },
+    "loopRecs": [{
+      "name": "stream-A",      // resource name to be recorded
+      "dir": "./stream-A",     // path to directory where the recorded files will be created
+      "data_extension": ".dat",  // extension for data files (default:".dat")
+      "index_extension": ".idx", // extension for index files (default:".idx")
+      "segment_duration": 600, // duration of the recorded file per segment in seconds (default:600[sec])
+      "total_duration": 3600,  // total duration of loop recording in seconds (default:3600[sec])
+      "index_interval": 100,   // indexing interval for a recording file in milliseconds (default:100[ms])
+    }]
   }]
 }
 ```
 
-## option
-[SRT API Socket Options](https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md)
+## § option
+* (refs.) [SRT API Socket Options](https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md)
 
-## streamid
-[SRT Access Control (Stream ID) Guidelines](https://github.com/Haivision/srt/blob/master/docs/features/access-control.md)
+## § streamid
+* (refs.) [SRT Access Control (Stream ID) Guidelines](https://github.com/Haivision/srt/blob/master/docs/features/access-control.md)
+* in case of ffmpeg, streamid is specified by **-srt_streamid** option
 
-## service (windows)
-make it service with [nssm](https://nssm.cc/)
+### common
+* **r** : resource name identifies the name of the resource
+* **m** : mode expected for this connection
+  * **request** (default) : the caller wants to receive the stream
+  * **publish** : the caller wants to send the stream data
+
+### for playback of loop recording
+* **at** : specifies requested position of recorded data
+  * **ISO string** : specifies the date and time to be requested in ISO8601 syntax (ex.:"20230317T123000+0900")
+  * **now-{{sec}}** : specifies the time seconds before the current time
+  * **now** (default) : specifies live stream instead of recorded data
+* **gap** : specifies the action to be taken when the stream reaches a gap in the recorded data.
+  * **skip** (default) : skip to the next recorded data without waiting
+  * **wait** : wait for a time corresponding to the gap before starting the next recorded data
+  * **break** : break the stream when a gap appears
+* **speed** : specifies playback speed (synonym: **x**)
+  * **1** (default) : normal play speed
+
+## § service (windows)
+* make it service with [nssm](https://nssm.cc/)
 
 ### install
 ```bat
@@ -99,8 +127,8 @@ net stop srt-live-reflect
 "%nssm%" remove srt-live-reflect confirm
 ```
 
-## service (linux)
-make it service with systemd
+## § service (linux)
+* make it service with systemd
 
 ### {{directory where srt-live-reflect is}}/startup.sh
 ```sh
@@ -127,7 +155,7 @@ Group={{group}}
 WantedBy=multi-user.target
 ```
 
-## work with ffmpeg
+## § work with ffmpeg
 
 ### publish
 > ffmpeg -re -stream_loop -1 -i **{{path to movie file}}** -c:v copy -c:a copy -f mpegts -pes_payload_size 0 -srt_streamid #!::r=**{{stream name}}**,m=publish srt://**{{host}}**:**{{port}}**
