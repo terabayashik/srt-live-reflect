@@ -169,12 +169,13 @@ class SegmentReader
     std::streamoff next_;
     int64_t read_;
     int64_t offset_ns_;
+    bool reached_idx_end_;
 public:
     typedef boost::scoped_ptr<SegmentReader> ptr_t;
     SegmentReader(const std::string& log_prefix, Segment::ptr_t segment, const Speed& speed,
         const boost::chrono::milliseconds& idx_interval, const boost::chrono::steady_clock::time_point& base_time)
         : log_prefix_(log_prefix), segment_(segment), speed_(speed), dat_file_(), idx_file_()
-        , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), offset_ns_(0) {
+        , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), offset_ns_(0), reached_idx_end_(false) {
     }
     virtual ~SegmentReader() {
         Destroy();
@@ -192,10 +193,12 @@ public:
         idx_file_.seekg(offset * sizeof(std::streamoff));
         if (idx_file_.read(reinterpret_cast<char*>(&pos_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
             Logger::Trace(boost::format("%s : failed to read segment index (%s[ms]) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
+            reached_idx_end_ = true;
             return false;
         }
         if (idx_file_.read(reinterpret_cast<char*>(&next_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
             Logger::Trace(boost::format("%s : failed to read segment index (%s[ms] next) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
+            reached_idx_end_ = true;
             return false;
         }
         dat_file_.open(segment_->DatPath().string(), std::ios::in | std::ios::binary);
@@ -224,7 +227,7 @@ public:
             boost::this_thread::sleep_for(boost::chrono::nanoseconds(-elapsed_ns));
             return true;
         }
-        buf.resize(dat_file_.read(&buf.at(0), buf.size()).gcount());
+        buf.resize(static_cast<size_t>(dat_file_.read(&buf.at(0), buf.size()).gcount()));
         if (buf.empty()) {
             return false;
         }
@@ -243,8 +246,10 @@ public:
         while (pos_ + read_ >= next_) {
             std::streamoff next = 0;
             if (idx_file_.read(reinterpret_cast<char*>(&next), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
+                reached_idx_end_ = true;
                 break;
             }
+            reached_idx_end_ = false;
             if (next_ > pos_) {
                 read_ -= next_ - pos_;
             }
@@ -256,6 +261,9 @@ public:
     }
     const boost::chrono::steady_clock::time_point& BaseTime() const {
         return base_time_;
+    }
+    bool ReachedIdxEnd() const {
+        return reached_idx_end_;
     }
 };
 
@@ -441,7 +449,7 @@ protected:
         boost::mutex::scoped_lock lock(mutex_);
         boost::range::remove_erase(sender_runners_, sender_runner);
     }
-    virtual time_segment_t GetSegment(const boost::posix_time::ptime& utc, bool next = false) {
+    virtual time_segment_t GetSegment(const boost::posix_time::ptime& utc, bool next = false) const {
         boost::mutex::scoped_lock lock(mutex_);
         if (segments_.empty()) {
             return std::make_pair(boost::posix_time::ptime(), Segment::ptr_t());
@@ -455,7 +463,7 @@ protected:
         }
         return std::make_pair(it->first, it->second);
     }
-    virtual void Send(Sender::ptr_t sender, const StreamOption& option) {
+    virtual void Send(Sender::ptr_t sender, const StreamOption& option) const {
         const std::string log_prefix = (boost::format("%s > [ %s ]") % log_prefix_ % sender->GetOption().Get<std::string>("peer")).str();
         const boost::posix_time::ptime startedAt = GetStartedAt(option.Get<std::string>("at"));
         if (startedAt.is_special()) {
@@ -543,6 +551,11 @@ protected:
                     }
                 }
                 continue;
+            } else if (speed.IsFast() && reader->ReachedIdxEnd()) {
+                boost::posix_time::ptime at = startedAt + boost::posix_time::microseconds((tick - base_time).count() * speed / 1000); // nanosec to microsec
+                if (!CheckPlaybackPosition(at, speed, log_prefix)) {
+                    break;
+                }
             }
             if (buf.empty() || sender->Send(buf)) {
                 continue;
@@ -553,7 +566,7 @@ protected:
         }
         Logger::Info(boost::format("%s : done : %s") % log_prefix % option(','));
     }
-    const bool CheckPlaybackPosition(const boost::posix_time::ptime& at, const Speed& speed, const std::string& log_prefix) {
+    bool CheckPlaybackPosition(const boost::posix_time::ptime& at, const Speed& speed, const std::string& log_prefix) const {
         if (speed.IsNormal()) {
             return true;
         }
