@@ -109,9 +109,9 @@ public:
         return true;
     }
     virtual void Destroy() {
+        listener_.reset();
         receivers_.clear();
         loopRecs_.clear();
-        listener_.reset();
     }
     virtual std::string app() const {
         return conf_["app"].to<std::string>("live");

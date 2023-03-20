@@ -314,6 +314,67 @@ class LoopRec::Impl
             }, pimpl_, shared_from_this());
         }
     };
+    class Queue {
+        typedef boost::function<void()> task_t;
+        typedef std::deque<task_t> queue_t;
+        queue_t queue_;
+        boost::thread thread_;
+        boost::mutex mutex_;
+        boost::condition_variable cond_;
+    public:
+        Queue() : queue_(), thread_(), mutex_(), cond_() {
+        }
+        virtual ~Queue() {
+            Destroy();
+        }
+        virtual bool Initialize() {
+            thread_ = boost::thread(&Queue::Thread, this);
+            return true;
+        }
+        virtual void Destroy() {
+            if (!thread_.joinable()) return;
+            thread_.interrupt();
+            cond_.notify_one();
+            thread_.join();
+        }
+        virtual bool Push(task_t task) {
+            return PushIf(0, task);
+        }
+        virtual bool PushIf(size_t limit, task_t task) {
+            if (!thread_.joinable()) return false;
+            boost::mutex::scoped_lock lock(mutex_);
+            if (limit > 0 && queue_.size() >= limit) return false;
+            queue_.push_back(task);
+            cond_.notify_one();
+            return true;
+        }
+        virtual void Clear() {
+            boost::mutex::scoped_lock lock(mutex_);
+            queue_.clear();
+        }
+        virtual bool Running() const {
+            return thread_.joinable();
+        }
+    protected:
+        virtual task_t Pop() {
+            boost::mutex::scoped_lock lock(mutex_);
+            cond_.wait(lock, [this]() {
+                if (!queue_.empty()) return true;
+                boost::this_thread::interruption_point();
+                return false;
+            });
+            task_t task = queue_.front();
+            queue_.pop_front();
+            return task;
+        }
+        virtual void Thread() {
+            try {
+                for (;;) Pop()();
+            } catch (boost::thread_interrupted&) {
+            } catch (std::exception&) {
+            }
+        }
+    };
     LoopRec* owner_;
     const Json conf_;
     const std::string app_;
@@ -330,11 +391,14 @@ class LoopRec::Impl
     boost::chrono::steady_clock::time_point segment_time_;
     mutable boost::mutex mutex_;
     SenderRunner::vector_t sender_runners_;
+    Queue queue_;
+    int queue_limit_;
 public:
     Impl(LoopRec* owner, const Json& conf, const std::string& app, const std::string& name)
         : owner_(owner), conf_(conf), app_(app), name_(name), log_prefix_((boost::format("<%s> loopRec [ %s ]") % app % name).str())
         , segments_(), writer_(), dir_(), dat_ext_(".dat"), idx_ext_(".idx")
-        , segment_duration_(600), total_duration_(3600), idx_interval_(100), segment_time_(), mutex_(), sender_runners_() {
+        , segment_duration_(600), total_duration_(3600), idx_interval_(100), segment_time_(), mutex_(), sender_runners_()
+        , queue_(), queue_limit_(0), OnReceive(), OnDisconnected() {
     }
     virtual ~Impl() {
         Destroy();
@@ -375,9 +439,39 @@ public:
             Logger::Warning(boost::format("<%s> an error occured while initializing loopRec [ %s ] : %s") % app_ % name_ % ex.what());
             return false;
         }
+        queue_limit_ = conf_["queue"].to<int>(0);
+        if (queue_limit_ == 0) {
+            // write data without queue
+            OnReceive = [this](const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
+                boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
+                return Write(buf, tick);
+            };
+            OnDisconnected = [this](const ReceiveOption& option) {
+                return CloseWriter();
+            };
+        } else {
+            // write data via the queue
+            OnReceive = [this](const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
+                boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
+                return queue_.PushIf(queue_limit_, [=]() { // copy
+                    Write(buf, tick);
+                }) || queue_.Push([this]() {
+                    Logger::Warning(boost::format("%s : queue overflowed") % log_prefix_);
+                    queue_.Clear();
+                    CloseWriter();
+                });
+            };
+            OnDisconnected = [this](const ReceiveOption& option) {
+                return queue_.Push([this]() {
+                    CloseWriter();
+                });
+            };
+            queue_.Initialize();
+        }
         return true;
     }
     virtual void Destroy() {
+        queue_.Destroy();
         sender_runners_.clear();
         writer_.reset();
         segments_.clear();
@@ -396,8 +490,11 @@ public:
         lock.unlock();
         sender_runner->Initialize();
     }
-    virtual bool OnReceive(const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
-        boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
+    std::function<bool(const ReceiveOption& option, const Event::buf_t& buf, bool discrete)> OnReceive;
+    std::function<bool(const ReceiveOption& option)> OnDisconnected;
+protected:
+    typedef std::pair<boost::posix_time::ptime, Segment::ptr_t> time_segment_t;
+    virtual bool Write(const Event::buf_t& buf, const boost::chrono::steady_clock::time_point& tick) {
         std::string suffix = "Z"; // UTC
         if (writer_ && tick >= segment_time_) {
             writer_->Close();
@@ -426,15 +523,13 @@ public:
         }
         return true;
     }
-    virtual bool OnDisconnected(const ReceiveOption& option) {
+    virtual bool CloseWriter() {
         if (writer_) {
             writer_->Close();
             writer_.reset();
         }
         return true;
     }
-protected:
-    typedef std::pair<boost::posix_time::ptime, Segment::ptr_t> time_segment_t;
     virtual void RemoveExpiredSegments(const boost::posix_time::ptime& utc) {
         boost::posix_time::seconds dur((total_duration_ + segment_duration_).count());
         boost::mutex::scoped_lock lock(mutex_);
