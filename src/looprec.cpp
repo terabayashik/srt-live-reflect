@@ -314,12 +314,23 @@ class LoopRec::Impl
             }, pimpl_, shared_from_this());
         }
     };
+    //----------------------------------------------------------------------------
+    /// @class LoopRec::Impl::Queue
+    //----------------------------------------------------------------------------
     class Queue {
-        typedef boost::function<void()> task_t;
+    public:
+        class Task {
+        public:
+            Task() {}
+            virtual ~Task() {}
+            virtual void Run() = 0;
+        };
+        typedef boost::shared_ptr<Task> task_t;
         typedef std::deque<task_t> queue_t;
+    private:
         queue_t queue_;
         boost::thread thread_;
-        boost::mutex mutex_;
+        mutable boost::mutex mutex_;
         boost::condition_variable cond_;
     public:
         Queue() : queue_(), thread_(), mutex_(), cond_() {
@@ -352,8 +363,14 @@ class LoopRec::Impl
             boost::mutex::scoped_lock lock(mutex_);
             queue_.clear();
         }
-        virtual bool Running() const {
-            return thread_.joinable();
+        template<typename Type> boost::shared_ptr<const Type> GetFirstOf() const {
+            boost::mutex::scoped_lock lock(mutex_);
+            for (queue_t::const_iterator it = queue_.begin(); it != queue_.end(); ++it) {
+                task_t ptr = *it;
+                if (!ptr || typeid(*ptr) != typeid(Type)) continue;
+                return boost::dynamic_pointer_cast<const Type>(ptr);
+            }
+            return boost::shared_ptr<const Type>();
         }
     protected:
         virtual task_t Pop() {
@@ -369,10 +386,40 @@ class LoopRec::Impl
         }
         virtual void Thread() {
             try {
-                for (;;) Pop()();
+                for (;;) Pop()->Run();
             } catch (boost::thread_interrupted&) {
             } catch (std::exception&) {
             }
+        }
+    };
+    //----------------------------------------------------------------------------
+    /// @class LoopRec::Impl::WriteTask
+    //----------------------------------------------------------------------------
+    class WriteTask : public Queue::Task {
+        LoopRec::Impl* pimpl_;
+        Event::buf_t buf_;
+        boost::chrono::steady_clock::time_point tick_;
+    public:
+        WriteTask(LoopRec::Impl* pimpl, const Event::buf_t& buf, const boost::chrono::steady_clock::time_point& tick)
+            : pimpl_(pimpl), buf_(buf), tick_(tick) {
+        }
+        virtual void Run() override {
+            pimpl_->Write(buf_, tick_);
+        }
+        const boost::chrono::steady_clock::time_point& Tick() const {
+            return tick_;
+        }
+    };
+    //----------------------------------------------------------------------------
+    /// @class LoopRec::Impl::CloseWriterTask
+    //----------------------------------------------------------------------------
+    class CloseWriterTask : public Queue::Task {
+        LoopRec::Impl* pimpl_;
+    public:
+        CloseWriterTask(LoopRec::Impl* pimpl) : pimpl_(pimpl) {
+        }
+        virtual void Run() override {
+            pimpl_->CloseWriter();
         }
     };
     LoopRec* owner_;
@@ -440,6 +487,10 @@ public:
             return false;
         }
         queue_limit_ = conf_["queue"].to<int>(0);
+        if (queue_limit_ > 0) {
+            queue_limit_ = std::max<int>(queue_limit_, conf_["queue_limit_min"].to<int>(100));
+            queue_limit_ = std::min<int>(queue_limit_, conf_["queue_limit_max"].to<int>(100000));
+        }
         if (queue_limit_ == 0) {
             // write data without queue
             OnReceive = [this](const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
@@ -453,18 +504,21 @@ public:
             // write data via the queue
             OnReceive = [this](const ReceiveOption& option, const Event::buf_t& buf, bool discrete) {
                 boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
-                return queue_.PushIf(queue_limit_, [=]() { // copy
-                    Write(buf, tick);
-                }) || queue_.Push([this]() {
-                    Logger::Warning(boost::format("%s : queue overflowed") % log_prefix_);
+                if (queue_limit_ <= 0) {
+                    // unlimited queuing
+                    return queue_.Push(Queue::task_t(new WriteTask(this, buf, tick)));
+                }
+                // time limited queuing in milliseconds
+                boost::shared_ptr<const WriteTask> first = queue_.GetFirstOf<WriteTask>();
+                if (first && first->Tick() + boost::chrono::milliseconds(queue_limit_) < tick) {
+                    Logger::Warning(boost::format("%s : queue overflowed : %lld[ms]") % log_prefix_ % ((tick - first->Tick()).count() / 1000 / 1000));
                     queue_.Clear();
-                    CloseWriter();
-                });
+                    queue_.Push(Queue::task_t(new CloseWriterTask(this)));
+                }
+                return queue_.Push(Queue::task_t(new WriteTask(this, buf, tick)));
             };
             OnDisconnected = [this](const ReceiveOption& option) {
-                return queue_.Push([this]() {
-                    CloseWriter();
-                });
+                return queue_.Push(Queue::task_t(new CloseWriterTask(this)));
             };
             queue_.Initialize();
         }

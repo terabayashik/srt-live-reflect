@@ -7,6 +7,10 @@
 #include "sender.h"
 #include "looprec.h"
 
+#if defined(_DEBUG) && defined(WIN32)
+#include <conio.h>
+#endif
+
 //----------------------------------------------------------------------------
 /// @class ReflectSender
 //----------------------------------------------------------------------------
@@ -414,7 +418,11 @@ public:
         std::signal(SIGINT, &App::signalHandler);
         std::signal(SIGTERM, &App::signalHandler);
         boost::unique_lock<boost::mutex> lk(mutex_);
+#if defined(_DEBUG) && defined(WIN32)
+        while (!cond_.timed_wait(lk, boost::posix_time::milliseconds(100)) && (!_kbhit() || _getche() != 'q'));
+#else
         cond_.wait(lk);
+#endif
         return 0;
     }
 protected:
