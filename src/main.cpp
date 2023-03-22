@@ -1,10 +1,15 @@
 ﻿#include "stdafx.h"
-#include "listener.h"
-#include "receiver.h"
-#include "sender.h"
 #include "json.h"
 #include "curl.h"
 #include "logger.h"
+#include "listener.h"
+#include "receiver.h"
+#include "sender.h"
+#include "looprec.h"
+
+#if defined(_DEBUG) && defined(WIN32)
+#include <conio.h>
+#endif
 
 //----------------------------------------------------------------------------
 /// @class ReflectSender
@@ -63,15 +68,15 @@ class Reflect : public Event, public boost::enable_shared_from_this<Reflect>, pr
         }
     };
     const Json conf_;
-    Curl curl_;
     mutable Cache cache_;
     Listener::ptr_t listener_;
     Receiver::map_t receivers_;
+    LoopRec::map_t loopRecs_;
     mutable boost::mutex mutex_;
     int32_t stats_;
     std::chrono::steady_clock::time_point stats_time_;
 protected:
-    Reflect(const Json& conf) : Event(), conf_(conf), curl_(), cache_(), listener_(), receivers_(), mutex_(), stats_(0), stats_time_() {
+    Reflect(const Json& conf) : Event(), conf_(conf), cache_(), listener_(), receivers_(), loopRecs_(), mutex_(), stats_(0), stats_time_() {
     }
     Receiver::ptr_t FindReceiver(const std::string& name) const {
         boost::mutex::scoped_lock lock(mutex_);
@@ -90,6 +95,7 @@ public:
     virtual bool Initialize() {
         stats_ = conf_["publish"]["stats"].to<int32_t>(0);
         stats_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(stats_);
+        loopRecs_ = LoopRec::Create(conf_["loopRecs"], app());
         ListenOption opt;
         opt["host"] = conf_["host"].to<std::string>();
         opt["port"] = conf_["port"].to<std::string>();
@@ -107,8 +113,9 @@ public:
         return true;
     }
     virtual void Destroy() {
-        receivers_.clear();
         listener_.reset();
+        receivers_.clear();
+        loopRecs_.clear();
     }
     virtual std::string app() const {
         return conf_["app"].to<std::string>("live");
@@ -163,7 +170,8 @@ protected:
         std::string key = (boost::format("%s:%s") % uri % body.serialize()).str();
         CURLcode res = cache_.find(mutex_, key, body);
         if (res != CURL_LAST) return res;
-        CurlJsonIO io(curl_);
+        Curl curl;
+        CurlJsonIO io(curl);
         io.Reset(5, body);
         curl_easy_setopt(io, CURLOPT_URL, uri.c_str());
         res = curl_easy_perform(io);
@@ -220,8 +228,14 @@ protected:
             option.SetSockOpts(res.second["option"], ListenOption::s_sockopts_pre);
             return true;
         } else { // "request"
-            Receiver::ptr_t receiver = FindReceiver(name);
-            if (!receiver) return false; // not exists
+            if (streamOption.HasExcept("at", "now")) {
+                LoopRec::map_t::const_iterator loopRec = loopRecs_.find(name);
+                if (loopRec == loopRecs_.end() || !loopRec->second) return false;
+                if (!loopRec->second->IsAcceptable(streamOption)) return false;
+            } else {
+                Receiver::ptr_t receiver = FindReceiver(name);
+                if (!receiver) return false; // not exists
+            }
             res_t res = Authorize("on_pre_accept", "play", peer, streamOption);
             if (!res.first) return false;
             option.SetSockOpts(conf_["option"], ListenOption::s_sockopts_pre); // "pre" options
@@ -253,13 +267,13 @@ protected:
                 return false;
             }
             receiver->AddEvent(shared_from_this(), 0);
+            LoopRec::map_t::const_iterator loopRec = loopRecs_.find(name);
+            if (loopRec != loopRecs_.end() && loopRec->second) receiver->AddEvent(loopRec->second, -1);
             boost::mutex::scoped_lock lock(mutex_);
             receivers_[name] = receiver;
             Logger::Info(boost::format("<%s> accept publish [ %s ] from %s") % app() % name % opt["peer"]);
             return true;
         } else { // "request"
-            Receiver::ptr_t receiver = FindReceiver(name);
-            if (!receiver) return false; // not exists
             SendOption opt;
             opt["app"] = app();
             opt["name"] = name;
@@ -269,8 +283,16 @@ protected:
             opt.SetSockOpts(conf_["option"], SendOption::s_sockopts); // "post" options
             opt.SetSockOpts(conf_["play"]["option"], SendOption::s_sockopts);
             opt.SetSockOpts(res.second["option"], SendOption::s_sockopts);
-            Event::ptr_t sender(ReflectSender::Create(sfd, opt));
-            receiver->AddEvent(sender, 0, true);
+            if (streamOption.HasExcept("at", "now")) {
+                LoopRec::map_t::const_iterator loopRec = loopRecs_.find(name);
+                if (loopRec == loopRecs_.end() || !loopRec->second) return false;
+                loopRec->second->CreateSender(sfd, opt, streamOption);
+            } else {
+                Receiver::ptr_t receiver = FindReceiver(name);
+                if (!receiver) return false; // not exists
+                Event::ptr_t sender(ReflectSender::Create(sfd, opt));
+                receiver->AddEvent(sender, 0, true);
+            }
             Logger::Info(boost::format("<%s> accept request [ %s ] from %s") % app() % name % opt["peer"]);
             return true;
         }
@@ -396,7 +418,11 @@ public:
         std::signal(SIGINT, &App::signalHandler);
         std::signal(SIGTERM, &App::signalHandler);
         boost::unique_lock<boost::mutex> lk(mutex_);
+#if defined(_DEBUG) && defined(WIN32)
+        while (!cond_.timed_wait(lk, boost::posix_time::milliseconds(100)) && (!_kbhit() || _getche() != 'q'));
+#else
         cond_.wait(lk);
+#endif
         return 0;
     }
 protected:
@@ -435,7 +461,7 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 1, 5)
+#define VERSION MAKE_VERSION(0, 2, 5)
 
 //----------------------------------------------------------------------------
 /// @fn main

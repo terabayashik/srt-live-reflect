@@ -604,6 +604,18 @@ template unsigned long long URIOption::Get(const std::string& key, const unsigne
 //----------------------------------------------------------------------------
 //
 //----------------------------------------------------------------------------
+void URIOption::Synonym(const std::string& key, const std::string& synonym)
+{
+    synonym_[synonym] = key;
+    map_t::const_iterator it = map_.find(synonym);
+    if (it == map_.end()) return;
+    if (map_.find(key) == map_.end()) map_[key] = it->second;
+    map_.erase(it);
+}
+
+//----------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------
 bool URIOption::comp::operator()(const std::string& lhs, const std::string& rhs) const {
 #if defined(WIN32) || defined(WIN64)
     return _stricmp(lhs.c_str(), rhs.c_str()) < 0;
