@@ -7,6 +7,7 @@
 
 #if defined(WIN32) || defined(WIN64)
 #define _CRT_SECURE_NO_WARNINGS 1
+#define NOMINMAX
 #endif
 
 #include <stdio.h>
@@ -37,3 +38,5 @@
 
 #include <curl/curl.h>
 #include <srt/srt.h>
+
+#define USE_AWSSDK

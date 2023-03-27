@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\aws.cpp" />
     <ClCompile Include="src\curl.cpp" />
     <ClCompile Include="src\event.cpp" />
     <ClCompile Include="src\json.cpp" />
@@ -40,6 +41,7 @@
     <ClCompile Include="src\URI.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\aws.h" />
     <ClInclude Include="src\curl.h" />
     <ClInclude Include="src\event.h" />
     <ClInclude Include="src\json.h" />
