@@ -431,6 +431,7 @@ public:
         for (;;) {
             Aws::S3::Model::ListObjectsRequest request;
             request.SetBucket(bucketName);
+            request.SetMaxKeys(1000);
             if (!marker.empty()) request.SetMarker(marker);
             marker = "";
             Aws::S3::Model::ListObjectsOutcome outcome = s3_client.ListObjects(request);
