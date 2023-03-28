@@ -421,23 +421,36 @@ public:
             return true;
         }
     }
-    virtual bool S3ListObjects(const std::string& bucketName, const std::string& marker, std::vector<std::string>& list) const {
-        Logger::Trace(boost::format("AWS::S3ListObjects(%s, %s) ->") % bucketName % marker);
+    virtual bool S3ListObjects(const std::string& bucketName, const std::string& marker0, std::vector<std::string>& list) const {
+        Logger::Trace(boost::format("AWS::S3ListObjects(%s, %s) ->") % bucketName % marker0);
         Aws::S3::S3Client s3_client(*clientConfig_);
-        Aws::S3::Model::ListObjectsRequest request;
-        request.SetBucket(bucketName);
-        if (!marker.empty()) request.SetMarker(marker);
         list.clear();
-        Aws::S3::Model::ListObjectsOutcome outcome = s3_client.ListObjects(request);
-        if (!outcome.IsSuccess()) {
-            const Aws::S3::S3Error& err = outcome.GetError();
-            Logger::Error(boost::format("AWS::S3ListObjects(%s, %s): Error: %s: %s") % bucketName % marker %  err.GetExceptionName() % err.GetMessage());
-            return false;
-        } else {
-            Aws::Vector<Aws::S3::Model::Object> objects = outcome.GetResult().GetContents();
-            Logger::Trace(boost::format("AWS::S3ListObjects(%s, %s): Found: %u") % bucketName % marker % objects.size());
-            for (Aws::S3::Model::Object& object : objects) list.push_back(object.GetKey());
-            return true;
+        std::string marker = marker0;
+        std::string key = boost::trim_copy_if(marker0, [](char c) { return c == '.' || c == '/' || c == '\\'; });
+        if (!key.empty()) key += "/";
+        for (;;) {
+            Aws::S3::Model::ListObjectsRequest request;
+            request.SetBucket(bucketName);
+            if (!marker.empty()) request.SetMarker(marker);
+            marker = "";
+            Aws::S3::Model::ListObjectsOutcome outcome = s3_client.ListObjects(request);
+            if (!outcome.IsSuccess()) {
+                const Aws::S3::S3Error& err = outcome.GetError();
+                Logger::Error(boost::format("AWS::S3ListObjects(%s, %s): Error: %s: %s") % bucketName % marker %  err.GetExceptionName() % err.GetMessage());
+                return false;
+            } else {
+                Aws::Vector<Aws::S3::Model::Object> objects = outcome.GetResult().GetContents();
+                Logger::Trace(boost::format("AWS::S3ListObjects(%s, %s): Found: %u") % bucketName % marker % objects.size());
+                for (Aws::S3::Model::Object& object : objects) {
+                    marker = object.GetKey();
+                    if (!key.empty()) {
+                        if (!boost::istarts_with(marker, key)) continue;
+                        if (marker.find('/', key.size()) != std::string::npos) continue;
+                    }
+                    list.push_back(object.GetKey());
+                }
+                if (objects.size() < request.GetMaxKeys() || marker.empty()) return true;
+            }
         }
     }
     virtual bool S3DeleteObject(const Aws::String& bucketName, const Aws::String& keyName) {
