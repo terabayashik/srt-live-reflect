@@ -6,6 +6,7 @@
 #include "receiver.h"
 #include "sender.h"
 #include "looprec.h"
+#include "aws.h"
 
 #if defined(_DEBUG) && defined(WIN32)
 #include <conio.h>
@@ -379,11 +380,26 @@ public:
             srt_setloglevel(srt_logging::LogLevel::error); // as default
         }
         srt_setloghandler(this, &App::logHandler);
+        if (conf_["aws"]["enabled"].to<int>(0)) {
+#if !defined(USE_AWSSDK)
+            Logger::Fatal(boost::format("ERROR: AWSSDK is not configured"));
+            return false;
+#endif
+            if (!AWS::Init(conf_)) {
+                Logger::Fatal(boost::format("ERROR: AWS::Init failed"));
+                return false;
+            }
+            //AWS::Test();
+            //return false;
+        }
         return true;
     }
     virtual void Destroy() {
         reflects_.clear();
         srt_cleanup();
+        if (conf_["aws"]["enabled"].to<int>(0)) {
+            AWS::Term();
+        }
         Logger::Info(boost::format("%s version %s : stopped") % name_ % version_);
         Logger::Term();
     }
@@ -461,7 +477,7 @@ boost::mutex App::mutex_;
 boost::condition_variable App::cond_;
 
 #define MAKE_VERSION(MAJOR, MINOR, PATCH) #MAJOR "." #MINOR "." #PATCH
-#define VERSION MAKE_VERSION(0, 2, 5)
+#define VERSION MAKE_VERSION(0, 3, 1)
 
 //----------------------------------------------------------------------------
 /// @fn main

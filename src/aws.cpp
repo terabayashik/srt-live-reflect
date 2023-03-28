@@ -182,8 +182,9 @@ protected:
         Aws::S3::Model::GetObjectRequest request;
         request.SetBucket(bucketName_);
         request.SetKey(keyName_);
-        Aws::IOStream* stream = Aws::New<Aws::IOStream>("SampleAllocationTag", &bufstream_);
-        request.SetResponseStreamFactory([stream]() { return stream; });
+        request.SetResponseStreamFactory([this]() {
+            return Aws::New<Aws::IOStream>("S3GetIOStreamAllocationTag", &bufstream_); // raw pointer, not shared_ptr
+        });
         //std::shared_ptr<Aws::Client::AsyncCallerContext> context = Aws::MakeShared<Aws::Client::AsyncCallerContext>("GetObjectAllocationTag");
         //context->SetUUID(keyName_);
         client_.GetObjectAsync(request, [this](const Aws::S3::S3Client* client,
@@ -263,7 +264,7 @@ protected:
         Aws::S3::Model::PutObjectRequest request;
         request.SetBucket(bucketName_);
         request.SetKey(keyName_);
-        const std::shared_ptr<Aws::IOStream> infile = Aws::MakeShared<Aws::FStream>("SampleAllocationTag", srcFile_.c_str(), std::ios_base::in | std::ios_base::binary);
+        const std::shared_ptr<Aws::IOStream> infile = Aws::MakeShared<Aws::FStream>("S3PutFstreamAllocationTag", srcFile_.c_str(), std::ios_base::in | std::ios_base::binary);
         if (!*infile) {
             Logger::Error(boost::format("AWS::S3PutObject(%s, %s, %s): Error: unable to open file") % bucketName_ % keyName_ % srcFile_);
             state_ = Failed;
@@ -340,6 +341,7 @@ public:
             case Aws::Utils::Logging::LogLevel::Warn: Logger::Warning(boost::format("%s|%s : %s") % prefix_ % tag % messageStream.str()); break;
             case Aws::Utils::Logging::LogLevel::Error: Logger::Error(boost::format("%s|%s : %s") % prefix_ % tag % messageStream.str()); break;
             case Aws::Utils::Logging::LogLevel::Fatal: Logger::Fatal(boost::format("%s|%s : %s") % prefix_ % tag % messageStream.str()); break;
+            case Aws::Utils::Logging::LogLevel::Off: default: break;
         }
     }
     virtual void Flush() override {
@@ -356,7 +358,8 @@ public:
         Term();
     }
     virtual bool Initialize(const Json& conf) {
-        std::string level = conf["aws"]["loglevel"].to<std::string>();
+        const Json::Node& awsConf = conf["aws"];
+        std::string level = awsConf["loglevel"].to<std::string>();
         if (level.empty()) conf["logger"]["level"].to<std::string>();
         if (boost::istarts_with(level, "t")) {
             options_.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
@@ -372,13 +375,46 @@ public:
             options_.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Info;
         }
         options_.loggingOptions.logger_create_fn = [&]() {
-            return std::shared_ptr<Aws::Utils::Logging::LogSystemInterface>(
-                new AwsLogAdapter(options_.loggingOptions.logLevel, conf["aws"]["logprefix"].to<std::string>("AWSSDK"))
-            );
+            return Aws::MakeShared<AwsLogAdapter>("AwsLogAdapterAllocationTag", options_.loggingOptions.logLevel, awsConf["logprefix"].to<std::string>("AWSSDK"));
         };
         Aws::InitAPI(options_);
         clientConfig_.reset(new Aws::Client::ClientConfiguration);
-        clientConfig_->region = conf["aws"]["region"].to<std::string>();
+        clientConfig_->region = awsConf["region"].to<std::string>("");
+        clientConfig_->scheme = boost::iequals(awsConf["scheme"].to<std::string>(""), "http") ? Aws::Http::Scheme::HTTP : Aws::Http::Scheme::HTTPS;
+        clientConfig_->useDualStack = awsConf["useDualStack"].to<int>(0) ? true : false;
+        clientConfig_->maxConnections = awsConf["maxConnections"].to<unsigned int>(25);
+        clientConfig_->requestTimeoutMs = awsConf["requestTimeoutMs"].to<long>(3000);
+        clientConfig_->connectTimeoutMs = awsConf["connectTimeoutMs"].to<long>(1000);
+        clientConfig_->enableTcpKeepAlive = awsConf["enableTcpKeepAlive"].to<int>(1) ? true : false;
+        clientConfig_->tcpKeepAliveIntervalMs = awsConf["tcpKeepAliveIntervalMs"].to<unsigned long>(30000);
+        clientConfig_->tcpKeepAliveIntervalMs = awsConf["tcpKeepAliveIntervalMs"].to<unsigned long>(30000);
+        clientConfig_->lowSpeedLimit = awsConf["lowSpeedLimit"].to<unsigned long>(1);
+        //clientConfig_->retryStrategy = ... // Not Supported
+        clientConfig_->endpointOverride = awsConf["endpointOverride"].to<std::string>("");
+        clientConfig_->proxyScheme = boost::iequals(awsConf["proxyScheme"].to<std::string>(""), "https") ? Aws::Http::Scheme::HTTPS : Aws::Http::Scheme::HTTP;
+        clientConfig_->proxyHost = awsConf["proxyHost"].to<std::string>("");
+        clientConfig_->proxyPort = awsConf["proxyPort"].to<unsigned int>(0);
+        clientConfig_->proxyUserName = awsConf["proxyUserName"].to<std::string>("");
+        clientConfig_->proxyPassword = awsConf["proxyPassword"].to<std::string>("");
+        //clientConfig_->executor = ... // Not Supported
+        clientConfig_->verifySSL = awsConf["verifySSL"].to<int>(1) ? true : false;
+        clientConfig_->caPath = awsConf["caPath"].to<std::string>("");
+        clientConfig_->caFile = awsConf["caFile"].to<std::string>(conf["cainfo"].to<boost::filesystem::path>().string().c_str());
+        //clientConfig_->writeRateLimiter = ... // Not Supported
+        //clientConfig_->readRateLimiter = ... // Not Supported
+        std::string httpLibOverride = awsConf["httpLibOverride"].to<std::string>("");
+        if (boost::iequals(httpLibOverride, "DEFAULT_CLIENT")) clientConfig_->httpLibOverride = Aws::Http::TransferLibType::DEFAULT_CLIENT;
+        else if (boost::iequals(httpLibOverride, "CURL_CLIENT")) clientConfig_->httpLibOverride = Aws::Http::TransferLibType::CURL_CLIENT;
+        else if (boost::iequals(httpLibOverride, "WIN_INET_CLIENT")) clientConfig_->httpLibOverride = Aws::Http::TransferLibType::WIN_INET_CLIENT;
+        else if (boost::iequals(httpLibOverride, "WIN_HTTP_CLIENT")) clientConfig_->httpLibOverride = Aws::Http::TransferLibType::WIN_HTTP_CLIENT;
+        std::string followRedirects = awsConf["followRedirects"].to<std::string>("");
+        if (boost::iequals(followRedirects, "DEFAULT")) clientConfig_->followRedirects = Aws::Client::FollowRedirectsPolicy::DEFAULT;
+        else if (boost::iequals(followRedirects, "ALWAYS")) clientConfig_->followRedirects = Aws::Client::FollowRedirectsPolicy::ALWAYS;
+        else if (boost::iequals(followRedirects, "NEVER")) clientConfig_->followRedirects = Aws::Client::FollowRedirectsPolicy::NEVER;
+        clientConfig_->disableExpectHeader = awsConf["disableExpectHeader"].to<int>(0) ? true : false;
+        clientConfig_->enableClockSkewAdjustment = awsConf["enableClockSkewAdjustment"].to<int>(1) ? true : false;
+        //clientConfig_->enableHostPrefixInjection = ... // Deprecated
+        //clientConfig_->enableEndpointDiscovery = ... // Deprecated
         return true;
     }
     virtual void Term() {

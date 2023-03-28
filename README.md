@@ -9,6 +9,9 @@ reflect srt live stream
 * libcurl
   * vcpkg install curl:x86-windows-static
   * vcpkg install curl:x64-windows-static
+* aws-sdk-cpp (optional: *USE_AWSSDK=1*)
+  * vcpkg install aws-sdk-cpp:x64-windows-static
+  * vcpkg install aws-sdk-cpp:x86-windows-static
 * boost
 
 ## § command line arguments
@@ -28,6 +31,12 @@ reflect srt live stream
     "level": "info",           // log level ["trace" / "debug" / "info" / "warning" / "error" / "fatal"] (default:"info")
     "max_size": 1073741824,    // maximum total log size (default:1024*1024*1024)
     "max_files": 30,           // maximum number of log files (default:30)
+  },
+  "aws": {
+    "enabled": false,          // enable or disable AWSSDK (default:false)
+    "loglevel": "",            // AWSSDK log level ["trace" / "debug" / "info" / "warning" / "error" / "fatal"] (default:same to "logger.level")
+    "logprefix": "",           // prefix for logs from AWSSDK (default:"AWSSDK")
+    "region": "",              // AWS region to be used (default:not specified)
   },
   "reflects": [{
     "app": "live",
