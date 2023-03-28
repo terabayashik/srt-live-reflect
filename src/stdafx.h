@@ -39,4 +39,4 @@
 #include <curl/curl.h>
 #include <srt/srt.h>
 
-#define USE_AWSSDK
+//#define USE_AWSSDK

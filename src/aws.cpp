@@ -1,6 +1,14 @@
 ﻿#include "stdafx.h"
 #include "aws.h"
 
+class DummyStream : public std::istream {
+    class DummyBuf : public std::streambuf {};
+    DummyBuf buf_;
+public:
+    DummyStream() : buf_(), std::istream(&buf_) { this->get(); } // make it eof
+};
+static DummyStream dummyStream;
+
 #if !defined(USE_AWSSDK)
 AWS::done_t AWS::DefaultDone = []() {};
 AWS::fail_t AWS::DefaultFail = [](const std::string&, const std::string&) {};
@@ -15,6 +23,9 @@ bool AWS::S3Get::Wait() {
 }
 size_t AWS::S3Get::Read(buf_t& buf) {
     return 0;
+}
+std::istream& AWS::S3Get::GetStream() {
+    return dummyStream;
 }
 bool AWS::S3Put::IsRunning() const {
     return false;
@@ -48,26 +59,14 @@ bool AWS::Test() {
 #else
 
 #include <aws/core/Aws.h>
-//#include <aws/core/utils/threading/Executor.h>
 #include <aws/s3/S3Client.h>
-//#include <aws/core/utils/memory/AWSMemory.h>
-//#include <aws/core/utils/memory/stl/AWSStreamFwd.h>
-//#include <aws/core/utils/stream/PreallocatedStreamBuf.h>
-//#include <aws/core/utils/StringUtils.h>
-
 #include <aws/s3/model/CreateBucketRequest.h>
 #include <aws/s3/model/DeleteBucketRequest.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
-//#include <aws/s3/model/CreateMultipartUploadRequest.h>
-//#include <aws/s3/model/AbortMultipartUploadRequest.h>
-//#include <aws/s3/model/CompleteMultipartUploadRequest.h>
-//#include <aws/s3/model/UploadPartRequest.h>
-//#include <aws/core/utils/UUID.h>
-//#include <aws/core/utils/stream/PreallocatedStreamBuf.h>
-//#include <aws/core/utils/stream/ConcurrentStreamBuf.h>
+#include <aws/core/utils/stream/ConcurrentStreamBuf.h>
 
 #if defined(WIN32) || defined(WIN64)
 #pragma comment(lib, "userenv.lib")
@@ -83,63 +82,6 @@ bool AWS::Test() {
 #include "logger.h"
 
 class AWS::S3Get::Impl {
-    class Bufstream : public std::streambuf {
-        buf_t buf_;
-        boost::mutex mutex_;
-        boost::condition_variable cond_;
-        volatile bool eos_; // end-of-stream
-    public:
-        Bufstream(size_t bufSiz) : buf_(), mutex_(), cond_(), eos_(false) {
-            buf_.resize(std::max<size_t>(bufSiz, 1), 0);
-            this->setp(&buf_.at(0), &buf_.at(0) + buf_.size());
-            this->setg(&buf_.at(0), &buf_.at(0), &buf_.at(0) + buf_.size());
-        }
-        size_t Read(buf_t& buf) {
-            if (!buf.size()) return 0;
-            size_t pos = 0;
-            while (pos < buf.size()) {
-                size_t size = std::min<size_t>(Readable(), buf.size() - pos);
-                if (size) {	// copy from read buffer
-                    traits_type::copy(&buf.at(pos), this->gptr(), size);
-                    pos += size;
-                    this->gbump(static_cast<int>(size));
-                } else if (!eos_) {
-                    boost::unique_lock<boost::mutex> lk(mutex_);
-                    cond_.notify_one();
-                    cond_.wait(lk);
-                } else {
-                    break;
-                }
-            }
-            return pos;
-        }
-        void SetEos() {
-            if (eos_) return;
-            boost::unique_lock<boost::mutex> lk(mutex_);
-            eos_ = true;
-            cond_.notify_one();
-        }
-    protected:
-        size_t Readable() const {
-            const char* gp = this->gptr();
-            const char* pp = this->pptr();
-            return (gp && pp && pp > gp) ? (pp - gp) : 0;
-        }
-        int_type overflow(int_type ch) override {
-            boost::unique_lock<boost::mutex> lk(mutex_);
-            for (;;) {
-                if (eos_) return traits_type::eof();
-                if (!Readable()) break;
-                cond_.notify_one();
-                cond_.wait(lk);
-            }
-            this->setp(&buf_.at(0), &buf_.at(0) + buf_.size());
-            this->setg(&buf_.at(0), &buf_.at(0), &buf_.at(0) + buf_.size());
-            if (!traits_type::eq_int_type(ch, traits_type::eof())) this->sputc(ch);
-            cond_.notify_one();
-            return traits_type::not_eof(ch);
-        }
-    };
     enum State { Failed = -1, Ready, Running, Done };
     Aws::S3::S3Client client_;
     Aws::String bucketName_;
@@ -147,12 +89,13 @@ class AWS::S3Get::Impl {
     done_t done_;
     fail_t fail_;
     State state_;
-    Bufstream bufstream_;
+    Aws::Utils::Stream::ConcurrentStreamBuf buf_;
+    std::istream istream_;
     boost::mutex mutex_;
     boost::condition_variable cond_;
 public:
     Impl(const Aws::S3::S3ClientConfiguration& clientConfig, const std::string& bucketName, const std::string& keyName, size_t bufSiz, const done_t& done, const fail_t& fail)
-        : client_(clientConfig), bucketName_(bucketName), keyName_(keyName), done_(done), fail_(fail), state_(Ready), bufstream_(bufSiz), mutex_(), cond_() {
+        : client_(clientConfig), bucketName_(bucketName), keyName_(keyName), done_(done), fail_(fail), state_(Ready), buf_(bufSiz), istream_(&buf_) , mutex_(), cond_() {
         Begin();
     }
     virtual ~Impl() {
@@ -165,7 +108,7 @@ public:
         boost::unique_lock<boost::mutex> lk(mutex_);
         if (!IsRunning()) return false;
         client_.DisableRequestProcessing();
-        bufstream_.SetEos();
+        buf_.SetEof();
         return true;
     }
     virtual bool Wait() {
@@ -174,7 +117,10 @@ public:
         return state_ == Done;
     }
     virtual size_t Read(buf_t& buf) {
-        return bufstream_.Read(buf);
+        return buf.size() ? istream_.read(&buf.at(0), buf.size()).gcount() : 0;
+    }
+    virtual std::istream& GetStream() {
+        return istream_;
     }
 protected:
     void Begin() {
@@ -183,7 +129,7 @@ protected:
         request.SetBucket(bucketName_);
         request.SetKey(keyName_);
         request.SetResponseStreamFactory([this]() {
-            return Aws::New<Aws::IOStream>("S3GetIOStreamAllocationTag", &bufstream_); // raw pointer, not shared_ptr
+            return Aws::New<Aws::IOStream>("S3GetIOStreamAllocationTag", &buf_); // raw pointer, not shared_ptr
         });
         //std::shared_ptr<Aws::Client::AsyncCallerContext> context = Aws::MakeShared<Aws::Client::AsyncCallerContext>("GetObjectAllocationTag");
         //context->SetUUID(keyName_);
@@ -191,7 +137,7 @@ protected:
             const Aws::S3::Model::GetObjectRequest& request, const Aws::S3::Model::GetObjectOutcome& outcome,
             const std::shared_ptr<const Aws::Client::AsyncCallerContext>& context) {
             boost::unique_lock<boost::mutex> lk(mutex_);
-            bufstream_.SetEos();
+            buf_.SetEof();
             if (!outcome.IsSuccess()) {
                 const Aws::S3::S3Error& err = outcome.GetError();
                 Logger::Error(boost::format("AWS::S3GetObject(%s, %s): Error: %s: %s") % bucketName_ % keyName_ % err.GetExceptionName() % err.GetMessage());
@@ -223,6 +169,10 @@ bool AWS::S3Get::Wait() {
 
 size_t AWS::S3Get::Read(buf_t& buf) {
     return pimpl_ ? pimpl_->Read(buf) : 0;
+}
+
+std::istream& AWS::S3Get::GetStream() {
+    return pimpl_ ?  pimpl_->GetStream() : dummyStream;
 }
 
 class AWS::S3Put::Impl {
@@ -576,7 +526,7 @@ bool AWS::Test() {
     }
     if (1) {
         std::string keyName = "test/ResponseStream.h";
-        S3Get get = S3GetObject(bucketName, keyName, 188 * 50, []() {
+        S3Get get = S3GetObject(bucketName, keyName, 188, []() {
             std::cout << "Get DONE" << std::endl;
         }, [](const std::string& name, const std::string& message) {
             std::cout << "Get FAIL:" << name << ": " << message << std::endl;
@@ -584,7 +534,8 @@ bool AWS::Test() {
         std::stringstream ss;
         S3Get::buf_t buf;
         for (int i = 0; ; ++i) {
-            buf.resize(188);
+            //if (i >= 3) get.Abort();
+            buf.resize(10);
             buf.resize(get.Read(buf));
             if (!buf.size()) break;
             std::cout << "read: " << buf.size() << std::endl;
@@ -593,6 +544,7 @@ bool AWS::Test() {
         std::string str = ss.str();
         std::cout << "total read: " << str.length() << std::endl;
         std::cout << str << std::endl;
+        get.Wait();
     }
     //pimpl_->S3DeleteObject(bucketName, "test/ResponseStream.h");
     pimpl_->S3DeleteBucket(bucketName + "x");

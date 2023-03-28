@@ -20,6 +20,7 @@ public:
         virtual bool Abort();
         virtual bool Wait();
         virtual size_t Read(buf_t& buf);
+        virtual std::istream& GetStream();
     };
     class S3Put {
         friend class AWS;
