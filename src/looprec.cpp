@@ -81,22 +81,24 @@ public:
         if (s3pushed_) DeleteLocal(false);
     }
     virtual void DeleteLocal(bool log) {
-        if (!dat_path_.empty()) {
+        boost::filesystem::path dat_path(dat_path_);
+        if (!dat_path.empty()) {
             boost::system::error_code ec;
-            if (boost::filesystem::remove(dat_path_, ec)) {
-                if (log) Logger::Info(boost::format("%s : remove segment [%s]") % log_prefix_ % dat_path_.filename().string());
+            if (boost::filesystem::remove(dat_path, ec)) {
+                if (log) Logger::Info(boost::format("%s : remove segment [%s]") % log_prefix_ % dat_path.filename().string());
                 dat_path_.clear();
             } else {
-                Logger::Warning(boost::format("%s : failed to remove segment [%s] : %s") % log_prefix_ % dat_path_.filename().string() % ec.to_string());
+                Logger::Warning(boost::format("%s : failed to remove segment [%s] : %s") % log_prefix_ % dat_path.filename().string() % ec.to_string());
             }
         }
-        if (!idx_path_.empty()) {
+        boost::filesystem::path idx_path(idx_path_);
+        if (!idx_path.empty()) {
             boost::system::error_code ec;
-            if (boost::filesystem::remove(idx_path_, ec)) {
-                if (log) Logger::Debug(boost::format("%s : remove segment index [%s]") % log_prefix_ % idx_path_.filename().string());
+            if (boost::filesystem::remove(idx_path, ec)) {
+                if (log) Logger::Debug(boost::format("%s : remove segment index [%s]") % log_prefix_ % idx_path.filename().string());
                 idx_path_.clear();
             } else {
-                Logger::Warning(boost::format("%s : failed to remove segment index [%s] : %s") % log_prefix_ % idx_path_.filename().string() % ec.to_string());
+                Logger::Warning(boost::format("%s : failed to remove segment index [%s] : %s") % log_prefix_ % idx_path.filename().string() % ec.to_string());
             }
         }
     }
@@ -279,7 +281,7 @@ public:
                 reached_idx_end_ = true;
                 return false;
             }
-            s3get_dat_ = s3client.GetAsync(s3bucket, segment_->S3KeyDat().string(), pos_);
+            s3get_dat_ = AWS::S3Client().GetAsync(s3bucket, segment_->S3KeyDat().string(), pos_); // another S3Client for segment data
             read_ = 0;
             offset_ns_ = offset * 1000ll * 1000 * idx_interval_.count(); // millisec to nanosec
             dat_stream_ = &s3get_dat_.GetStream();
