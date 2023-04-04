@@ -48,7 +48,7 @@ public:
     typedef std::map<boost::posix_time::ptime, ptr_t> map_t;
     Segment(const std::string& log_prefix, const boost::filesystem::path& path, const std::string& idx_ext, const std::string& s3bucket, const boost::filesystem::path& s3key = "")
         : log_prefix_(log_prefix), dat_path_(path), idx_path_(), continuous_(false), expired_(false)
-        , s3bucket_(s3bucket), s3pushed_(false), s3key_dat_(s3key), s3key_idx_() {
+        , s3pushed_(false), s3bucket_(s3bucket), s3key_dat_(s3key), s3key_idx_() {
         if (!path.empty()) {
             idx_path_ = boost::filesystem::change_extension(path, idx_ext);
             continuous_ = boost::algorithm::ends_with(path.stem().string(), CONTINUOUS);
@@ -261,11 +261,11 @@ public:
         }
         if (segment_->S3Pushed() && !s3bucket.empty()) {
             AWS::S3Client s3client;
-            if (s3client.Head(s3bucket, segment_->S3KeyIdx().string()).first < 0) {
+            if (!s3client.Head(s3bucket, segment_->S3KeyIdx().string())) {
                 Logger::Warning(boost::format("%s : failed to open segment index [%s]") % log_prefix_ % segment_->S3KeyIdx().filename().string());
                 return false;
             }
-            if (s3client.Head(s3bucket, segment_->S3KeyDat().string()).first < 0) {
+            if (!s3client.Head(s3bucket, segment_->S3KeyDat().string())) {
                 Logger::Warning(boost::format("%s : failed to open segment [%s]") % log_prefix_ % segment_->S3KeyDat().filename().string());
                 return false;
             }

@@ -35,15 +35,15 @@ OBJS     = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:.cpp=.o)))
 all: prepare $(TARGET)
 
 $(TARGET): $(OBJS)
-        $(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS)
+	$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
-        $(CXX) $(CPPFLAGS) $(INCDIR) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(INCDIR) -c $< -o $@
 
 prepare:
-        mkdir -p $(BINDIR)
-        mkdir -p $(OBJDIR)
+	mkdir -p $(BINDIR)
+	mkdir -p $(OBJDIR)
 
 clean:
-        rm -f $(OBJDIR)/*.o
-        rm -rf $(BINDIR)/*
+	rm -f $(OBJDIR)/*.o
+	rm -rf $(BINDIR)/*

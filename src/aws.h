@@ -46,7 +46,7 @@ public:
         virtual bool DeleteBucket(const std::string& bucketName);
         virtual bool List(const std::string& bucketName, const std::string& marker, std::vector<std::string>& list);
         virtual bool Delete(const std::string& bucketName, const std::string& keyName);
-        virtual std::pair<int64_t, int64_t> Head(const std::string& bucketName, const std::string& keyName); // filesize, last modified milliseconds since epoch
+        virtual bool Head(const std::string& bucketName, const std::string& keyName);
         virtual S3Get GetAsync(const std::string& bucketName, const std::string& keyName, uint64_t offset = 0, size_t bufSiz = 188 * 50, const done_t& done = nullptr, const fail_t& fail = nullptr);
         virtual S3Put PutAsync(const std::string& bucketName, const std::string& keyName, const std::string& srcFile, const done_t& done = nullptr, const fail_t& fail = nullptr);
     };
