@@ -175,7 +175,7 @@ public:
         return istream_;
     }
     virtual bool Begin() override {
-        Logger::Trace(boost::format("AWS::S3Get(%s, %s) ->") % bucketName_ % keyName_);
+        Logger::Trace(boost::format("AWS::S3Get(%s, %s) bytes=%llu- ->") % bucketName_ % keyName_ % offset_);
         Aws::S3::Model::GetObjectRequest request;
         request.SetBucket(bucketName_);
         request.SetKey(keyName_);

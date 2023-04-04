@@ -270,7 +270,7 @@ public:
                 return false;
             }
             int64_t offset = offset_ms / idx_interval_.count();
-            s3get_idx_ = s3client.GetAsync(s3bucket, segment_->S3KeyIdx().string(), offset / sizeof(std::streamoff));
+            s3get_idx_ = s3client.GetAsync(s3bucket, segment_->S3KeyIdx().string(), offset * sizeof(std::streamoff));
             if (s3get_idx_.GetStream().read(reinterpret_cast<char*>(&pos_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
                 Logger::Trace(boost::format("%s : failed to read segment index (%s[ms]) [%s]") % log_prefix_ % offset_ms % segment_->S3KeyIdx().filename().string());
                 reached_idx_end_ = true;
