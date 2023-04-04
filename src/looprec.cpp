@@ -238,7 +238,7 @@ class SegmentReader
     std::streamoff pos_;
     std::streamoff next_;
     int64_t read_;
-    int64_t offset_ns_;
+    int64_t pos_ns_;
     bool reached_idx_end_;
     AWS::S3Get s3get_dat_;
     AWS::S3Get s3get_idx_;
@@ -249,23 +249,23 @@ public:
     SegmentReader(const std::string& log_prefix, Segment::ptr_t segment, const Speed& speed,
         const boost::chrono::milliseconds& idx_interval, const boost::chrono::steady_clock::time_point& base_time)
         : log_prefix_(log_prefix), segment_(segment), speed_(speed), dat_file_(), idx_file_()
-        , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), offset_ns_(0), reached_idx_end_(false)
+        , idx_interval_(idx_interval), base_time_(base_time), pos_(0), next_(0), read_(0), pos_ns_(0), reached_idx_end_(false)
         , s3get_dat_(), s3get_idx_(), dat_stream_(nullptr), idx_stream_(nullptr) {
     }
     virtual ~SegmentReader() {
         Destroy();
     }
-    virtual bool Initialize(int64_t offset_ms, const std::string& s3bucket) {
+    virtual bool Initialize(int64_t offset_ms, const std::string& s3bucket, size_t s3bufsiz) {
         if (!segment_) {
             return false;
         }
         if (segment_->S3Pushed() && !s3bucket.empty()) {
             AWS::S3Client s3client;
-            if (!s3client.Head(s3bucket, segment_->S3KeyIdx().string())) {
+            if (s3client.Head(s3bucket, segment_->S3KeyIdx().string()).first < 0) {
                 Logger::Warning(boost::format("%s : failed to open segment index [%s]") % log_prefix_ % segment_->S3KeyIdx().filename().string());
                 return false;
             }
-            if (!s3client.Head(s3bucket, segment_->S3KeyDat().string())) {
+            if (s3client.Head(s3bucket, segment_->S3KeyDat().string()).first < 0) {
                 Logger::Warning(boost::format("%s : failed to open segment [%s]") % log_prefix_ % segment_->S3KeyDat().filename().string());
                 return false;
             }
@@ -281,9 +281,10 @@ public:
                 reached_idx_end_ = true;
                 return false;
             }
-            s3get_dat_ = AWS::S3Client().GetAsync(s3bucket, segment_->S3KeyDat().string(), pos_); // another S3Client for segment data
+            s3get_dat_ = AWS::S3Client().GetAsync(s3bucket, segment_->S3KeyDat().string(), pos_, s3bufsiz); // another S3Client for segment data
+            Logger::Debug(boost::format("%s : open segment [%s]") % log_prefix_ % segment_->S3KeyDat().filename().string());
             read_ = 0;
-            offset_ns_ = offset * 1000ll * 1000 * idx_interval_.count(); // millisec to nanosec
+            pos_ns_ = offset * 1000ll * 1000 * idx_interval_.count(); // millisec to nanosec
             dat_stream_ = &s3get_dat_.GetStream();
             idx_stream_ = &s3get_idx_.GetStream();
         } else {
@@ -312,7 +313,7 @@ public:
             Logger::Debug(boost::format("%s : open segment [%s]") % log_prefix_ % segment_->DatPath().filename().string());
             dat_file_.seekg(pos_);
             read_ = 0;
-            offset_ns_ = offset * 1000ll * 1000 * idx_interval_.count(); // millisec to nanosec
+            pos_ns_ = offset * 1000ll * 1000 * idx_interval_.count(); // millisec to nanosec
             dat_stream_ = &dat_file_;
             idx_stream_ = &idx_file_;
         }
@@ -345,12 +346,17 @@ public:
             boost::this_thread::sleep_for(boost::chrono::nanoseconds(-elapsed_ns));
             return true;
         }
+        boost::chrono::steady_clock::time_point s0 = boost::chrono::steady_clock::now();
         buf.resize(static_cast<size_t>(dat_stream_->read(&buf.at(0), buf.size()).gcount()));
+        int64_t e0 = (boost::chrono::steady_clock::now() - s0).count();
+        if (e0 >= 1000ll * 1000 * 30) {
+            Logger::Debug(boost::format("%s : it took %lf[ms] to read the data") % log_prefix_ % (static_cast<double>(e0) / 1000.0 / 1000.0));
+        }
         if (buf.empty()) {
             return false;
         }
         if (next_ > pos_) {
-            int64_t reference_ns = (offset_ns_ + 1000ll * 1000 * idx_interval_.count() * read_ / (next_ - pos_)) / speed_;
+            int64_t reference_ns = (pos_ns_ + 1000ll * 1000 * idx_interval_.count() * read_ / (next_ - pos_)) / speed_;
             if (reference_ns > elapsed_ns) {
                 if (reference_ns - elapsed_ns > 1000ll * 1000 * 100) {
                     Logger::Warning(boost::format("%s : too long wait : %lld[ms]") % log_prefix_ % ((reference_ns - elapsed_ns) / 1000 / 1000));
@@ -363,7 +369,13 @@ public:
         read_ += buf.size();
         while (pos_ + read_ >= next_) {
             std::streamoff next = 0;
-            if (idx_stream_->read(reinterpret_cast<char*>(&next), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
+            boost::chrono::steady_clock::time_point s1 = boost::chrono::steady_clock::now();
+            size_t idx_read = idx_stream_->read(reinterpret_cast<char*>(&next), sizeof(std::streamoff)).gcount();
+            int64_t e1 = (boost::chrono::steady_clock::now() - s1).count();
+            if (e1 >= 1000ll * 1000 * 30) {
+                Logger::Debug(boost::format("%s : it took %lf[ms] to read the index") % log_prefix_ % (static_cast<double>(e1) / 1000.0 / 1000.0));
+            }
+            if (idx_read < static_cast<std::streamsize>(sizeof(std::streamoff))) {
                 reached_idx_end_ = true;
                 break;
             }
@@ -371,7 +383,7 @@ public:
             if (next_ > pos_) {
                 read_ -= next_ - pos_;
             }
-            offset_ns_ += 1000ll * 1000 * idx_interval_.count();
+            pos_ns_ += 1000ll * 1000 * idx_interval_.count();
             pos_ = next_;
             next_ = next;
         }
@@ -382,6 +394,9 @@ public:
     }
     bool ReachedIdxEnd() const {
         return reached_idx_end_;
+    }
+    int64_t PosNs() const {
+        return pos_ns_;
     }
 };
 
@@ -550,11 +565,13 @@ class LoopRec::Impl
     boost::filesystem::path dir_;
     std::string s3bucket_;
     std::string s3folder_;
+    size_t s3bufsiz_;
     std::string dat_ext_;
     std::string idx_ext_;
     boost::chrono::seconds segment_duration_;
     boost::chrono::seconds total_duration_;
     boost::chrono::milliseconds idx_interval_;
+    uint32_t prefetch_ms_;
     boost::chrono::steady_clock::time_point segment_time_;
     mutable boost::mutex mutex_;
     SenderRunner::vector_t sender_runners_;
@@ -563,8 +580,8 @@ class LoopRec::Impl
 public:
     Impl(LoopRec* owner, const Json& conf, const std::string& app, const std::string& name)
         : owner_(owner), conf_(conf), app_(app), name_(name), log_prefix_((boost::format("<%s> loopRec [ %s ]") % app % name).str())
-        , segments_(), writer_(), dir_(), s3bucket_(), s3folder_(), dat_ext_(".dat"), idx_ext_(".idx")
-        , segment_duration_(600), total_duration_(3600), idx_interval_(100), segment_time_(), mutex_(), sender_runners_()
+        , segments_(), writer_(), dir_(), s3bucket_(), s3folder_(), s3bufsiz_(0), dat_ext_(".dat"), idx_ext_(".idx")
+        , segment_duration_(600), total_duration_(3600), idx_interval_(100), prefetch_ms_(0), segment_time_(), mutex_(), sender_runners_()
         , queue_(), queue_limit_(0), OnReceive(), OnDisconnected() {
     }
     virtual ~Impl() {
@@ -573,8 +590,9 @@ public:
     virtual bool Initialize() {
         try {
             dir_ = conf_["dir"].to<boost::filesystem::path>();
-            s3bucket_ = boost::trim_copy_if(conf_["s3bucket"].to<std::string>(), boost::is_any_of(" \t\v"));
-            s3folder_ = boost::trim_copy_if(conf_["s3key"].to<std::string>(), boost::is_any_of(" \t\v./\\"));
+            s3bucket_ = boost::trim_copy_if(conf_["s3"]["bucket"].to<std::string>(), boost::is_any_of(" \t\v"));
+            s3folder_ = boost::trim_copy_if(conf_["s3"]["folder"].to<std::string>(), boost::is_any_of(" \t\v./\\"));
+            s3bufsiz_ = conf_["s3"]["bufsiz"].to<size_t>(188 * 100);
             dat_ext_ = "." + boost::trim_left_copy_if(conf_["data_extension"].to<std::string>("dat"), boost::is_any_of("."));
             idx_ext_ = "." + boost::trim_left_copy_if(conf_["index_extension"].to<std::string>("idx"), boost::is_any_of("."));
             if (dat_ext_ == idx_ext_) idx_ext_ += "_idx";
@@ -582,6 +600,7 @@ public:
             segment_duration_ = boost::chrono::seconds(segdur);
             total_duration_ = boost::chrono::seconds(std::max<uint32_t>(conf_["total_duration"].to<uint32_t>(3600), segdur));
             idx_interval_ = boost::chrono::milliseconds(std::max<uint32_t>(conf_["index_interval"].to<uint32_t>(100), 1));
+            prefetch_ms_ = conf_["prefetch"].to<uint32_t>(1000);
             if (!s3bucket_.empty()) {
                 if (s3folder_.empty()) {
                     char hostname[256] = {'\0'};
@@ -781,7 +800,11 @@ protected:
         Logger::Info(boost::format("%s : started : %s") % log_prefix % option(','));
         Event::buf_t buf(bufsiz);
         SegmentReader::ptr_t reader;
+        SegmentReader::ptr_t next_reader;
         time_segment_t segment;
+        time_segment_t next_segment;
+        boost::mutex prefetch_mutex;
+        boost::thread prefetch_thread;
         boost::chrono::steady_clock::time_point base_time = boost::chrono::steady_clock::now();
         while (sender->IsConnected()) {
             boost::chrono::steady_clock::time_point tick = boost::chrono::steady_clock::now();
@@ -821,7 +844,7 @@ protected:
                 if (boost::chrono::nanoseconds(offset_ns) < segment_duration_) {
                     reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, tick - boost::chrono::nanoseconds(offset_ns / speed)));
                 }
-                if (!reader || !reader->Initialize(offset_ns / 1000 / 1000, s3bucket_)) {
+                if (!reader || !reader->Initialize(offset_ns / 1000 / 1000, s3bucket_, s3bufsiz_)) {
                     reader.reset();
                     if (gap == "break") {
                         break;
@@ -842,11 +865,22 @@ protected:
                 if (!CheckPlaybackPosition(at, speed, log_prefix)) {
                     break;
                 }
+                boost::chrono::steady_clock::time_point baseTime = reader->BaseTime() + boost::chrono::nanoseconds(segment_duration_.count() * 1000ll * 1000 * 1000 / speed);
+                if (prefetch_ms_ > 0 && next_segment.second && next_segment.second->Continuous()) {
+                    boost::unique_lock<boost::mutex> lk(prefetch_mutex);
+                    reader.swap(next_reader);
+                    next_reader.reset();
+                    next_segment.second.reset();
+                    if (reader) {
+                        segment = next_segment;
+                        continue;
+                    }
+                }
                 segment = GetSegment(segment.first, true); // switch to next segment
                 if (segment.second && segment.second->Continuous()) {
-                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, reader->BaseTime() + boost::chrono::nanoseconds(segment_duration_.count() * 1000ll * 1000 * 1000 / speed)));
+                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, baseTime));
                     segment.second.reset();
-                    if (!reader->Initialize(0, s3bucket_)) {
+                    if (!reader->Initialize(0, s3bucket_, s3bufsiz_)) {
                         reader.reset();
                     }
                 } else {
@@ -863,12 +897,34 @@ protected:
                     break;
                 }
             }
+            if (prefetch_ms_ > 0 && !next_segment.second) {
+                int64_t remain_ms = segment_duration_.count() * 1000 - reader->PosNs() / 1000 / 1000;
+                if (10 < remain_ms && remain_ms <= prefetch_ms_ * speed) {
+                    next_segment = GetSegment(segment.first, true); // prefetch next segment
+                    if (next_segment.second && next_segment.second->Continuous()) {
+                        boost::chrono::steady_clock::time_point baseTime = reader->BaseTime() + boost::chrono::nanoseconds(segment_duration_.count() * 1000ll * 1000 * 1000 / speed);
+                        if (prefetch_thread.joinable()) {
+                            prefetch_thread.join();
+                        }
+                        prefetch_thread = boost::thread([&, baseTime]() {
+                            boost::unique_lock<boost::mutex> lk(prefetch_mutex);
+                            if (!next_segment.second || !next_segment.second->Continuous()) return;
+                            next_reader.reset(new SegmentReader(log_prefix, next_segment.second, speed, idx_interval_, baseTime));
+                            if (next_reader->Initialize(0, s3bucket_, s3bufsiz_)) return;
+                            next_reader.reset();
+                        });
+                    }
+                }
+            }
             if (buf.empty() || sender->Send(buf)) {
                 continue;
             }
             std::string err = sender->GetErrMsg();
             Logger::Info(boost::format("%s : %s") % log_prefix % err);
             break;
+        }
+        if (prefetch_thread.joinable()) {
+            prefetch_thread.join();
         }
         Logger::Info(boost::format("%s : done : %s") % log_prefix % option(','));
     }

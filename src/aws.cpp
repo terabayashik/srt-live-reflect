@@ -115,7 +115,6 @@ protected:
     }
 public:
     virtual ~S3Async() {
-        Wait();
     }
     virtual bool IsRunning() const {
         return state_ == Running;
@@ -161,6 +160,7 @@ public:
         : S3Async(client, bucketName, keyName, done, fail), offset_(offset), buf_(bufSiz), istream_(&buf_) {
     }
     virtual ~Impl() {
+        Wait();
     }
     virtual bool Abort() override {
         lock_t lk(mutex_);
@@ -211,6 +211,7 @@ public:
         : S3Async(client, bucketName, keyName, done, fail), srcFile_(srcFile) {
     }
     virtual ~Impl() {
+        Wait();
     }
     virtual bool Begin() override {
         Logger::Trace(boost::format("AWS::S3Put(%s, %s, %s) ->") % bucketName_ % keyName_ % srcFile_);
@@ -254,6 +255,7 @@ public:
         : region_(clientConfig.region), client_(new Aws::S3::S3Client(clientConfig)) {
     }
     virtual ~Impl() {
+        client_.reset();
     }
     virtual bool ListBuckets(std::vector<std::string>& list) const {
         Logger::Trace(boost::format("AWS::S3Client::ListBuckets() ->"));
@@ -350,7 +352,7 @@ public:
             return true;
         }
     }
-    virtual bool Head(const Aws::String& bucketName, const Aws::String& keyName) {
+    virtual std::pair<int64_t, int64_t> Head(const Aws::String& bucketName, const Aws::String& keyName) {
         Logger::Trace(boost::format("AWS::S3Client::Head(%s, %s) ->") % bucketName % keyName);
         Aws::S3::Model::HeadObjectRequest request;
         request.SetBucket(bucketName);
@@ -359,11 +361,12 @@ public:
         if (!outcome.IsSuccess()) {
             const Aws::S3::S3Error& err = outcome.GetError();
             Logger::Error(boost::format("AWS::S3Client::Head(%s, %s): Error: %s: %s") % bucketName % keyName %  err.GetExceptionName() % err.GetMessage());
-            return false;
+            return std::make_pair<int64_t, int64_t>(-1, -1);
         } else {
-            //Aws::S3::Model::HeadObjectResult& result = outcome.GetResult();
-            Logger::Trace(boost::format("AWS::S3Client::Head(%s, %s): Done") % bucketName % keyName);
-            return true;
+            Aws::S3::Model::HeadObjectResult& result = outcome.GetResult();
+            const Aws::Utils::DateTime& mod = result.GetLastModified();
+            Logger::Trace(boost::format("AWS::S3Client::Head(%s, %s): Done : %lld[bytes], %s") % bucketName % keyName % result.GetContentLength() % mod.ToLocalTimeString("%Y-%m-%dT%H:%M:%S"));
+            return std::make_pair<int64_t, int64_t>(result.GetContentLength(), mod.Millis()); // milliseconds since epoch
         }
     }
     virtual S3Get GetAsync(const std::string& bucketName, const std::string& keyName, uint64_t offset, size_t bufSiz, const done_t& done, const fail_t& fail) {
@@ -556,9 +559,9 @@ bool AWS::S3Client::Delete(const std::string& bucketName, const std::string& key
     return pimpl_ ? pimpl_->Delete(bucketName, keyName) : false;
 }
 
-bool AWS::S3Client::Head(const std::string& bucketName, const std::string& keyName) {
+std::pair<int64_t, int64_t> AWS::S3Client::Head(const std::string& bucketName, const std::string& keyName) {
     if (!pimpl_ && pconf_) pimpl_.reset(new Impl(pconf_->ClientConfig()));
-    return pimpl_ ? pimpl_->Head(bucketName, keyName) : false;
+    return pimpl_ ? pimpl_->Head(bucketName, keyName) : std::make_pair<int64_t, int64_t>(-1, -1);
 }
 
 AWS::S3Get AWS::S3Client::GetAsync(const std::string& bucketName, const std::string& keyName, uint64_t offset, size_t bufSiz, const done_t& done, const fail_t& fail) {
