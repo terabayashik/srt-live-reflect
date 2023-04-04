@@ -155,9 +155,10 @@ class AWS::S3Get::Impl : public S3Async {
     uint64_t offset_;
     Aws::Utils::Stream::ConcurrentStreamBuf buf_;
     std::istream istream_;
+    bool abort_requested_;
 public:
     Impl(client_t client, const std::string& bucketName, const std::string& keyName, uint64_t offset, size_t bufSiz, const done_t& done, const fail_t& fail)
-        : S3Async(client, bucketName, keyName, done, fail), offset_(offset), buf_(bufSiz), istream_(&buf_) {
+        : S3Async(client, bucketName, keyName, done, fail), offset_(offset), buf_(bufSiz), istream_(&buf_), abort_requested_(false) {
     }
     virtual ~Impl() {
         Wait();
@@ -165,6 +166,7 @@ public:
     virtual bool Abort() override {
         lock_t lk(mutex_);
         if (!IsRunning()) return false;
+        abort_requested_ = true;
         client_->DisableRequestProcessing(); // all requests sharing the s3client will be aborted
         buf_.SetEof();
         return true;
@@ -188,7 +190,11 @@ public:
             buf_.SetEof();
             if (!outcome.IsSuccess()) {
                 const Aws::S3::S3Error& err = outcome.GetError();
-                Logger::Error(boost::format("AWS::S3Get(%s, %s): Error: %s: %s") % bucketName_ % keyName_ % err.GetExceptionName() % err.GetMessage());
+                if (abort_requested_) {
+                    Logger::Trace(boost::format("AWS::S3Get(%s, %s): Abort: %s: %s") % bucketName_ % keyName_ % err.GetExceptionName() % err.GetMessage());
+                } else {
+                    Logger::Error(boost::format("AWS::S3Get(%s, %s): Error: %s: %s") % bucketName_ % keyName_ % err.GetExceptionName() % err.GetMessage());
+                }
                 OnFail(err.GetExceptionName(), err.GetMessage());
             } else {
                 Logger::Trace(boost::format("AWS::S3Get(%s, %s): Done") % bucketName_ % keyName_);
@@ -410,6 +416,31 @@ public:
         LogStream(logLevel, tag, ss);
     }
     virtual void LogStream(Aws::Utils::Logging::LogLevel logLevel, const char* tag, const Aws::OStringStream &messageStream) override {
+        if (logLevel == Aws::Utils::Logging::LogLevel::Error && boost::equals(tag, "AWSXmlClient")) {
+            static const char* ignores[] = {
+                "Request processing disabled or continuation cancelled by user's continuation handler.",
+                "curlCode: 23, Failed writing received data to disk/application",
+                nullptr,
+            };
+            for (int i = 0; ignores[i]; ++i) {
+                if (boost::contains(messageStream.str(), ignores[i])) {
+                    //std::cout << "ignore: " << messageStream.str() << std::endl;
+                    return;
+                }
+            }
+        }
+        if (logLevel == Aws::Utils::Logging::LogLevel::Error && boost::equals(tag, "CurlHttpClient")) {
+            static const char* ignores[] = {
+                "Curl returned error code 23 - Failed writing received data to disk/application",
+                nullptr,
+            };
+            for (int i = 0; ignores[i]; ++i) {
+                if (boost::contains(messageStream.str(), ignores[i])) {
+                    //std::cout << "ignore: " << messageStream.str() << std::endl;
+                    return;
+                }
+            }
+        }
         switch (logLevel) {
             case Aws::Utils::Logging::LogLevel::Trace: Logger::Trace(boost::format("%s|%s : %s") % prefix_ % tag % messageStream.str()); break;
             case Aws::Utils::Logging::LogLevel::Debug: Logger::Debug(boost::format("%s|%s : %s") % prefix_ % tag % messageStream.str()); break;
