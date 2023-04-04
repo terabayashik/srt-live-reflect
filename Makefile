@@ -46,4 +46,4 @@ prepare:
 
 clean:
 	rm -f $(OBJDIR)/*.o
-	rm -rf $(BINDIR)/*
+	rm -f $(BINDIR)/$(TARGET)
