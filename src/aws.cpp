@@ -651,7 +651,7 @@ bool AWS::Test() {
             std::cout << "Get FAIL:" << name << ": " << message << std::endl;
         });
         std::stringstream ss;
-        S3Get::buf_t buf;
+        std::vector<char> buf;
         for (int i = 0; ; ++i) {
             //if (i >= 3) get.Abort();
             buf.resize(10);

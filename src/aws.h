@@ -15,7 +15,6 @@ public:
         typedef boost::shared_ptr<Impl> pimpl_t;
         pimpl_t pimpl_;
     public:
-        typedef std::vector<char> buf_t;
         S3Get(pimpl_t pimpl = pimpl_t()) : pimpl_(pimpl) {}
         virtual ~S3Get() {}
         virtual bool IsRunning() const;
