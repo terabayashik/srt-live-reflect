@@ -322,7 +322,6 @@ public:
             request.SetBucket(bucketName);
             request.SetMaxKeys(1000);
             if (!marker.empty()) request.SetMarker(marker);
-            marker = "";
             Aws::S3::Model::ListObjectsOutcome outcome = client_->ListObjects(request);
             if (!outcome.IsSuccess()) {
                 const Aws::S3::S3Error& err = outcome.GetError();
@@ -331,6 +330,7 @@ public:
             } else {
                 Aws::Vector<Aws::S3::Model::Object> objects = outcome.GetResult().GetContents();
                 Logger::Trace(boost::format("AWS::S3Client::List(%s, %s): Found: %u") % bucketName % marker % objects.size());
+                marker = "";
                 for (Aws::S3::Model::Object& object : objects) {
                     marker = object.GetKey();
                     if (!key.empty()) {
