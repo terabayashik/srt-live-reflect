@@ -19,7 +19,7 @@ reflect srt live stream
 * **default** : *"./srt-live-reflect.conf"*
 
 ## § configuration file
-### srt-live-stream.conf (JSON)
+### srt-live-reflect.conf (JSON)
 * acccepts C style, C++ style comment and trailing commas
 ```json
 {
