@@ -34,9 +34,9 @@ reflect srt live stream
   },
   "aws": {
     "enabled": false,          // enable or disable AWSSDK (default:false)
-    "loglevel": "",            // AWSSDK log level ["trace" / "debug" / "info" / "warning" / "error" / "fatal"] (default:same to "logger.level")
-    "logprefix": "",           // prefix for logs from AWSSDK (default:"AWSSDK")
-    "region": "",              // AWS region to be used (default:not specified)
+    "loglevel": "error",       // AWSSDK log level ["trace" / "debug" / "info" / "warning" / "error" / "fatal"] (default:fallback to "logger.level")
+    "logprefix": "AWSSDK",     // prefix for logs from AWSSDK (default:"AWSSDK")
+    "region": "ap-northeast-1",// AWS region to be used (default:not specified)
   },
   "reflects": [{
     "app": "live",
@@ -78,13 +78,20 @@ reflect srt live stream
       // "on_accept": "http://127.0.0.1:8090/on_accept_play"
     },
     "loopRecs": [{
-      "name": "stream-A",      // resource name to be recorded
-      "dir": "./stream-A",     // path to directory where the recorded files will be created
+      "name": "stream-A",        // resource name to be recorded
+      "dir": "./stream-A",       // path to directory where the recorded files will be created (default:"./" + resource name)
       "data_extension": ".dat",  // extension for data files (default:".dat")
       "index_extension": ".idx", // extension for index files (default:".idx")
-      "segment_duration": 600, // duration of the recorded file per segment in seconds (default:600[sec])
-      "total_duration": 3600,  // total duration of loop recording in seconds (default:3600[sec])
-      "index_interval": 100,   // indexing interval for a recording file in milliseconds (default:100[ms])
+      "segment_duration": 600,   // duration of the recorded file per segment in seconds (default:600)
+      "total_duration": 3600,    // total duration of loop recording in seconds (default:3600)
+      "index_interval": 100,     // indexing interval for a recording file in milliseconds (default:100)
+      "prefetch": 1000,          // time (in milliseconds) when to start prefetching the next segment during playback (0 to disable prefetch) (default:1000)
+      "queue": 0,                // maximum time (in milliseconds) to queue the ingress data when recording (0 to disable queue) (default:0)
+      "s3": {                    // "aws.enabled" should be set to true when using AWS S3
+        "bucket": "bucket-A",    // AWS S3 bucket name to store the recorded files (empty to disable S3 upload) (default:"")
+        "folder": "stream-A",    // folder name on AWS S3 bucket (default:hostname + "/" + resource name)
+        "bufsiz": 18800,         // buffer size used when playback the stream from AWS S3 (default:188*100)
+      },
     }]
   }]
 }
