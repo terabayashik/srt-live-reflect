@@ -35,6 +35,7 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/xpressive/xpressive.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/endian/conversion.hpp>
 
 #include <curl/curl.h>
 #include <srt/srt.h>
