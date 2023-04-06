@@ -20,6 +20,8 @@
 #include <chrono>
 #include <csignal>
 
+#define BOOST_FILESYSTEM_VERSION 4
+
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 #include <boost/tokenizer.hpp>

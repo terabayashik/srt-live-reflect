@@ -40,6 +40,7 @@ public:
         pimpl_t pimpl_;
     public:
         S3Client(pimpl_t pimpl = pimpl_t()) : pimpl_(pimpl) {}
+        virtual ~S3Client() {}
         virtual bool ListBuckets(std::vector<std::string>& list);
         virtual bool CreateBucket(const std::string& bucketName);
         virtual bool DeleteBucket(const std::string& bucketName);

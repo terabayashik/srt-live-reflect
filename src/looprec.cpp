@@ -50,12 +50,12 @@ public:
         : log_prefix_(log_prefix), dat_path_(path), idx_path_(), continuous_(false), expired_(false)
         , s3pushed_(false), s3bucket_(s3bucket), s3key_dat_(s3key), s3key_idx_() {
         if (!path.empty()) {
-            idx_path_ = boost::filesystem::change_extension(path, idx_ext);
+            (idx_path_ = path).replace_extension(idx_ext);
             continuous_ = boost::algorithm::ends_with(path.stem().string(), CONTINUOUS);
         }
         if (!s3bucket.empty() && !s3key.empty()) {
             s3pushed_ = true;
-            s3key_idx_ = boost::filesystem::change_extension(s3key, idx_ext);
+            (s3key_idx_ = s3key).replace_extension(idx_ext);
             if (path.empty()) continuous_ = boost::algorithm::ends_with(s3key.stem().string(), CONTINUOUS);
         }
     }
@@ -72,10 +72,10 @@ public:
         DeleteLocal(true);
         S3Delete(true);
     }
-    virtual void SetLocalPath(const boost::filesystem::wpath& path, const std::string& idx_ext) {
+    virtual void SetLocalPath(const boost::filesystem::path& path, const std::string& idx_ext) {
         if (path.empty()) return;
         if (dat_path_.empty()) dat_path_ = path;
-        if (idx_path_.empty()) idx_path_ = boost::filesystem::change_extension(path, idx_ext);
+        if (idx_path_.empty()) (idx_path_ = path).replace_extension(idx_ext);
     }
     virtual void DeleteLocalIfS3Pushed() {
         if (s3pushed_) DeleteLocal(false);
@@ -626,7 +626,7 @@ public:
                 if (s3client.List(s3bucket_, s3folder_, list)) {
                     for (std::vector<std::string>::const_iterator it = list.begin(); it != list.end(); ++it) {
                         const boost::filesystem::path path(*it);
-                        std::string ext = boost::filesystem::extension(path);
+                        std::string ext = path.extension().string();
                         if (ext != dat_ext_) continue;
                         try {
                             std::string fname = path.filename().string();
@@ -636,7 +636,7 @@ public:
                             if (segment->Initialize()) {
                                 segments_[utc] = segment;
                             }
-                        } catch (boost::bad_lexical_cast) {
+                        } catch (boost::bad_lexical_cast&) {
                             continue;
                         }
                     }
@@ -646,7 +646,7 @@ public:
             boost::filesystem::create_directories(dir_);
             for (boost::filesystem::directory_iterator it(dir_), end; it != end; ++it) {
                 const boost::filesystem::path path(*it);
-                std::string ext = boost::filesystem::extension(path);
+                std::string ext = path.extension().string();
                 if (ext != dat_ext_) continue;
                 try {
                     std::string fname = path.filename().string();
@@ -662,7 +662,7 @@ public:
                         segments_[utc] = segment;
                         segment->S3Push(s3folder_);
                     }
-                } catch (boost::bad_lexical_cast) {
+                } catch (boost::bad_lexical_cast&) {
                     continue;
                 }
             }
@@ -964,7 +964,7 @@ protected:
                 double delaySec = boost::lexical_cast<double>(str.substr(4));
                 boost::posix_time::microseconds delay(static_cast<long long>(delaySec * 1000 * 1000));
                 return now - delay;
-            } catch (boost::bad_lexical_cast) {
+            } catch (boost::bad_lexical_cast&) {
                 return boost::posix_time::ptime();
             }
         }
@@ -978,13 +978,13 @@ protected:
         bool extended = false;
         try {
             time = boost::posix_time::from_iso_string(str);
-        } catch (boost::bad_lexical_cast) {
+        } catch (boost::bad_lexical_cast&) {
         }
         if (time.is_special()) {
             try {
                 time = boost::posix_time::from_iso_extended_string(str);
                 extended = true;
-            } catch (boost::bad_lexical_cast) {
+            } catch (boost::bad_lexical_cast&) {
             }
         }
         if (time.is_special() || tzd[0] == 'z' || tzd[0] == 'Z') {
@@ -1002,7 +1002,7 @@ protected:
                     minutes = boost::lexical_cast<int32_t>(tzd.substr(3));
                 }
                 return time - boost::posix_time::time_duration(hours, minutes, 0);
-            } catch (boost::bad_lexical_cast) {
+            } catch (boost::bad_lexical_cast&) {
             }
         }
         const boost::posix_time::ptime local = boost::date_time::c_local_adjustor<boost::posix_time::ptime>::utc_to_local(now);

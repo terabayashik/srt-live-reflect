@@ -565,7 +565,7 @@ template <class Type> Type URIOption::Get(const std::string& key, const Type& de
     try {
         map_t::const_iterator it = map_.find(actualKey(key));
         return it == map_.end() ? defNoEntry : it->second.empty() ? defBlank : boost::lexical_cast<Type>(it->second);
-    } catch (boost::bad_lexical_cast) {
+    } catch (boost::bad_lexical_cast&) {
         return defBlank;
     }
 }
@@ -579,7 +579,7 @@ template <> std::string URIOption::Get(const std::string& key, const std::string
     try {
         map_t::const_iterator it = map_.find(actualKey(key));
         return it == map_.end() ? defNoEntry : it->second.empty() ? defBlank : it->second;
-    } catch (boost::bad_lexical_cast) {
+    } catch (boost::bad_lexical_cast&) {
         return defBlank;
     }
 }
