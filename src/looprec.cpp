@@ -306,11 +306,13 @@ public:
                 reached_idx_end_ = true;
                 return false;
             }
+            pos_ = idx_endian_(pos_);
             if (idx_file_.read(reinterpret_cast<char*>(&next_), sizeof(std::streamoff)).gcount() < static_cast<std::streamsize>(sizeof(std::streamoff))) {
                 Logger::Trace(boost::format("%s : failed to read segment index (%s[ms] next) [%s]") % log_prefix_ % offset_ms % segment_->IdxPath().filename().string());
                 reached_idx_end_ = true;
                 return false;
             }
+            next_ = idx_endian_(next_);
             dat_file_.open(segment_->DatPath().string(), std::ios::in | std::ios::binary);
             if (!dat_file_.is_open()) {
                 Logger::Warning(boost::format("%s : failed to open segment [%s]") % log_prefix_ % segment_->DatPath().filename().string());
