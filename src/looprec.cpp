@@ -248,13 +248,14 @@ class SegmentReader
     AWS::S3Get s3get_idx_;
     std::istream* dat_stream_;
     std::istream* idx_stream_;
+    bool burst_;
 public:
     typedef boost::scoped_ptr<SegmentReader> ptr_t;
     SegmentReader(const std::string& log_prefix, Segment::ptr_t segment, const Speed& speed, const boost::chrono::milliseconds& idx_interval
         , std::function<std::streampos(std::streampos)> idx_endian, const boost::chrono::steady_clock::time_point& base_time)
         : log_prefix_(log_prefix), segment_(segment), speed_(speed), dat_file_(), idx_file_()
         , idx_interval_(idx_interval), idx_endian_(idx_endian), base_time_(base_time), pos_(0), next_(0), read_(0), pos_ns_(0), reached_idx_end_(false)
-        , s3get_dat_(), s3get_idx_(), dat_stream_(nullptr), idx_stream_(nullptr) {
+        , s3get_dat_(), s3get_idx_(), dat_stream_(nullptr), idx_stream_(nullptr), burst_(false) {
     }
     virtual ~SegmentReader() {
         Destroy();
@@ -351,6 +352,7 @@ public:
         int64_t elapsed_ns = (tick - base_time_).count();
         if (elapsed_ns < 0) {
             buf.resize(0);
+std::cout << "wait... " << (-elapsed_ns / 1000 / 1000) << "[ms]" << std::endl;
             boost::this_thread::sleep_for(boost::chrono::nanoseconds(-elapsed_ns));
             return true;
         }
@@ -370,8 +372,13 @@ public:
                     Logger::Warning(boost::format("%s : too long wait : %lld[ms]") % log_prefix_ % ((reference_ns - elapsed_ns) / 1000 / 1000));
                 }
                 boost::this_thread::sleep_for(boost::chrono::nanoseconds(reference_ns - elapsed_ns));
+                burst_ = false;
             } else if (elapsed_ns - reference_ns > 1000ll * 1000 * 300) {
-                Logger::Warning(boost::format("%s : late to send : %lld[ms]") % log_prefix_ % ((elapsed_ns - reference_ns) / 1000 / 1000));
+                if (burst_) {
+                    Logger::Trace(boost::format("%s : burst send : %lld[ms]") % log_prefix_ % ((elapsed_ns - reference_ns) / 1000 / 1000));
+                } else {
+                    Logger::Warning(boost::format("%s : late to send : %lld[ms]") % log_prefix_ % ((elapsed_ns - reference_ns) / 1000 / 1000));
+                }
             }
         }
         read_ += buf.size();
@@ -405,6 +412,12 @@ public:
     }
     int64_t PosNs() const {
         return pos_ns_;
+    }
+    void SetBurst() {
+        burst_ = true;
+    }
+    bool IsBurst() const {
+        return burst_;
     }
 };
 
@@ -814,6 +827,7 @@ protected:
         const int32_t bufsiz = std::min<int32_t>(option.Get<int32_t>("bufsiz", 188 * 7), 1456);
         const std::string gap = option.Get<std::string>("gap", "skip");
         const Speed speed(std::max<double>(option.Get<double>("speed", 1), 0.1));
+        int32_t burst_ms = option.Get<int32_t>("burst", 0);
         Logger::Info(boost::format("%s : started : %s") % log_prefix % option(','));
         Event::buf_t buf(bufsiz);
         SegmentReader::ptr_t reader;
@@ -859,7 +873,17 @@ protected:
                 }
                 int64_t offset_ns = (at - segment.first).total_nanoseconds();
                 if (boost::chrono::nanoseconds(offset_ns) < segment_duration_) {
-                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, idx_endian_, tick - boost::chrono::nanoseconds(offset_ns / speed)));
+                    boost::chrono::steady_clock::time_point baseTime = tick - boost::chrono::nanoseconds(offset_ns / speed);
+                    bool burst = false;
+                    if (burst_ms > 0) {
+                        // slide the base time to make a burst start
+                        base_time -= boost::chrono::milliseconds(burst_ms);
+                        baseTime -= boost::chrono::milliseconds(burst_ms);
+                        burst_ms = 0;
+                        burst = true;
+                    }
+                    reader.reset(new SegmentReader(log_prefix, segment.second, speed, idx_interval_, idx_endian_, baseTime));
+                    if (burst) reader->SetBurst();
                 }
                 if (!reader || !reader->Initialize(offset_ns / 1000 / 1000, s3bucket_, s3bufsiz_)) {
                     reader.reset();
@@ -885,10 +909,12 @@ protected:
                 boost::chrono::steady_clock::time_point baseTime = reader->BaseTime() + boost::chrono::nanoseconds(segment_duration_.count() * 1000ll * 1000 * 1000 / speed);
                 if (prefetch_ms_ > 0 && next_segment.second && next_segment.second->Continuous()) {
                     boost::unique_lock<boost::mutex> lk(prefetch_mutex);
+                    bool burst = reader->IsBurst();
                     reader.swap(next_reader);
                     next_reader.reset();
                     next_segment.second.reset();
                     if (reader) {
+                        if (burst) reader->SetBurst();
                         segment = next_segment;
                         continue;
                     }
