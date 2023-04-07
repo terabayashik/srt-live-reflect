@@ -7,6 +7,7 @@
 
 #if defined(WIN32) || defined(WIN64)
 #define _CRT_SECURE_NO_WARNINGS 1
+#define NOMINMAX
 #endif
 
 #include <stdio.h>
@@ -18,6 +19,8 @@
 #include <map>
 #include <chrono>
 #include <csignal>
+
+#define BOOST_FILESYSTEM_VERSION 4
 
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
@@ -34,6 +37,9 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/xpressive/xpressive.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/endian/conversion.hpp>
 
 #include <curl/curl.h>
 #include <srt/srt.h>
+
+//#define USE_AWSSDK
