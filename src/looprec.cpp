@@ -352,7 +352,6 @@ public:
         int64_t elapsed_ns = (tick - base_time_).count();
         if (elapsed_ns < 0) {
             buf.resize(0);
-std::cout << "wait... " << (-elapsed_ns / 1000 / 1000) << "[ms]" << std::endl;
             boost::this_thread::sleep_for(boost::chrono::nanoseconds(-elapsed_ns));
             return true;
         }
