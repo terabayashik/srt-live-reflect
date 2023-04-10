@@ -1,0 +1,58 @@
+name: build srt-live-reflect incomplete...
+run-name: ${{ github.actor }} is building srt-live-reflect
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: pwd
+        run: pwd
+      - name: apt-get update
+        run: sudo apt-get update
+      - name: install g++
+        run: sudo apt install g++ -y
+      - name: install perl
+        run: sudo apt install perl -y
+      - name: install linux-libc-dev
+        run: sudo apt install linux-libc-dev -y
+      - name: install make
+        run: sudo apt install make -y
+      - name: vcpkg build
+        uses: johnwason/vcpkg-action@v4
+        id: vcpkg
+        with:
+          pkgs: >
+            openssl
+            libsrt
+            curl
+            boost-algorithm
+            boost-format
+            boost-tokenizer
+            boost-lexical-cast
+            boost-thread
+            boost-range
+            boost-json
+            boost-tuple
+            boost-date-time
+            boost-xpressive
+            boost-filesystem
+            boost-endian
+            boost-log
+            aws-sdk-cpp[s3]
+          triplet: x64-linux
+          token: ${{ github.token }}
+      - name: sed Makefile
+        run: >
+          sed -i.bak
+          -e "/INCDIR/ s/\.\.\/vcpkg\//${{github.workspace}}\/vcpkg\//"
+          -e "/LIBDIR/ s/\.\.\/vcpkg\//${{github.workspace}}\/vcpkg\//"
+          ./Makefile
+      - name: make
+        run: make AWSSDK=1
+      - name: archive production artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: srt-live-reflect
+          path: |
+            bin/srt-live-reflect
