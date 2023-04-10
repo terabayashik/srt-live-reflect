@@ -3,8 +3,8 @@ run-name: ${{ github.actor }} is building srt-live-reflect
 on:
   push:
     branches: ["develop"]
-  paths-ignore:
-    - '**.md'
+    paths-ignore:
+      - '**.md'
 jobs:
   build:
     runs-on: ubuntu-latest
