@@ -10,7 +10,7 @@
 # supported CodeQL languages.
 #
 name: "CodeQL"
-
+run-name: CodeQL | ${{ github.event.head_commit.message }}
 on:
   push:
     branches: [ "develop" ]
@@ -51,21 +51,40 @@ jobs:
         # Details on CodeQL's query packs refer to : https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
         # queries: security-extended,security-and-quality
 
-
-    # Autobuild attempts to build any compiled languages  (C/C++, C#, Go, or Java).
-    # If this step fails, then you should remove it and run the build manually (see below)
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
-
-    # ℹ️ Command-line programs to run using the OS shell.
-    # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-
-    #   If the Autobuild fails above, remove it and uncomment the following three lines.
-    #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
-
-    # - run: |
-    #     echo "Run, Build Application using script"
-    #     ./location_of_script_within_repo/buildscript.sh
+    - name: vcpkg build
+      uses: johnwason/vcpkg-action@v4
+      id: vcpkg
+      with:
+        pkgs: >
+          openssl
+          libsrt
+          curl
+          boost-algorithm
+          boost-format
+          boost-tokenizer
+          boost-lexical-cast
+          boost-thread
+          boost-range
+          boost-json
+          boost-tuple
+          boost-date-time
+          boost-xpressive
+          boost-filesystem
+          boost-endian
+          boost-log
+          aws-sdk-cpp[s3]
+        triplet: x64-linux
+        token: ${{ github.token }}
+    - name: sed Makefile
+      run: >
+        sed -i.bak
+        -e "s/\/usr\/lib64\/libz\.so\.1//"
+        -e "s/-lcurl/-lcurl -lz/"
+        -e "/INCDIR/ s/\.\.\/vcpkg\//\.\/vcpkg\//"
+        -e "/LIBDIR/ s/\.\.\/vcpkg\//\.\/vcpkg\//"
+        ./Makefile
+    - name: make
+      run: make USE_AWSSDK=1
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
