@@ -2,8 +2,7 @@ name: cppcheck srt-live-reflect
 run-name: ${{ github.actor }} is checking srt-live-reflect
 on:
   push:
-    branches:
-      - develop
+    branches: ["develop"]
 jobs:
   build:
     name: cppcheck-test
