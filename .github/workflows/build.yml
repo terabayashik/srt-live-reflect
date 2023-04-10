@@ -1,4 +1,4 @@
-name: build srt-live-reflect...
+name: build srt-live-reflect
 run-name: ${{ github.actor }} is building srt-live-reflect
 on:
   push:
