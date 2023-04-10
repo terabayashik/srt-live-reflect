@@ -52,7 +52,7 @@ jobs:
         -e "/LIBDIR/ s/\.\.\/vcpkg\//\.\/vcpkg\//"
         ./Makefile
     - name: make
-      run: make AWSSDK=1
+      run: make USE_AWSSDK=1
     - name: archive production artifacts
       uses: actions/upload-artifact@v3
       with:
