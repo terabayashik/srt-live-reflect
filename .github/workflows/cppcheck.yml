@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - develop
-    paths:
-      - 'src/**'
 jobs:
   build:
     name: cppcheck-test
