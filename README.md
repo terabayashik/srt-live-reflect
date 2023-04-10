@@ -1,5 +1,5 @@
 # srt-live-reflect
-[![build](https://github.com/wakabayashik/srt-live-reflect/actions/workflows/build.yml/badge.svg)](https://github.com/wakabayashik/srt-live-reflect/actions/workflows/build.yml)
+[![CodeQL](https://github.com/wakabayashik/srt-live-reflect/actions/workflows/codeql.yml/badge.svg)](https://github.com/wakabayashik/srt-live-reflect/actions/workflows/codeql.yml)
 
 reflect srt live stream
 
