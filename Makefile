@@ -29,9 +29,9 @@ LIBS     := $(LIBS) -laws-c-cal
 LIBS     := $(LIBS) -laws-c-sdkutils
 LIBS     := $(LIBS) -laws-checksums
 LIBS     := $(LIBS) -laws-c-common
+LIBS     := $(LIBS) -ls2n
 endif
 LIBS     := $(LIBS) -lcurl
-LIBS     := $(LIBS) -ls2n
 LIBS     := $(LIBS) -lssl
 LIBS     := $(LIBS) -lcrypto
 SRCDIR   = ./src
