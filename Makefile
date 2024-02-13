@@ -4,9 +4,16 @@ ifdef USE_AWSSDK
 CPPFLAGS := $(CPPFLAGS) -DUSE_AWSSDK
 endif
 TARGET   = srt-live-reflect
+UNAME_M  := $(shell uname -m)
+ifeq ($(UNAME_M),x86_64)
 INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
 LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
-LIBS     = /usr/lib64/libz.so.1
+LIBS     = /usr/lib/x86_64-linux-gnu/libz.so.1
+else ifeq ($(UNAME_M),aarch64)
+INCDIR   = -I./src -I../vcpkg/installed/arm64-linux/include
+LIBDIR   = -L../vcpkg/installed/arm64-linux/lib/
+LIBS     = /usr/lib/aarch64-linux-gnu/libz.so.1
+endif
 LIBS     := $(LIBS) -lsrt
 LIBS     := $(LIBS) -lboost_thread
 LIBS     := $(LIBS) -lboost_json
@@ -44,7 +51,11 @@ OBJS     = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:.cpp=.o)))
 all: prepare $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS)
+	if [ "$(UNAME_M)" = "x86_64" ]; then \
+		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
+	elif [ "$(UNAME_M)" = "aarch64" ]; then \
+		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
+	fi
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CXX) $(CPPFLAGS) $(INCDIR) -c $< -o $@
