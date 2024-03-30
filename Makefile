@@ -51,11 +51,7 @@ OBJS     = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:.cpp=.o)))
 all: prepare $(TARGET)
 
 $(TARGET): $(OBJS)
-	if [ "$(UNAME_M)" = "x86_64" ]; then \
-		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
-	elif [ "$(UNAME_M)" = "aarch64" ]; then \
-		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
-	fi
+	$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CXX) $(CPPFLAGS) $(INCDIR) -c $< -o $@
