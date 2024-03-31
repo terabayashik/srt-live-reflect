@@ -5,6 +5,7 @@ CPPFLAGS := $(CPPFLAGS) -DUSE_AWSSDK
 endif
 TARGET   = srt-live-reflect
 DISTRO_ID := $(shell . /etc/os-release; echo $$ID)
+UNAME_M  := $(shell uname -m)
 ifeq ($(DISTRO_ID),amzn)
 	ifeq ($(UNAME_M),x86_64)
 		INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
@@ -16,7 +17,6 @@ ifeq ($(DISTRO_ID),amzn)
 		LIBS     = /usr/lib64/libz.so.1
 	endif
 else ifeq ($(DISTRO_ID),ubuntu)
-	UNAME_M  := $(shell uname -m)
 	ifeq ($(UNAME_M),x86_64)
 		INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
 		LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
