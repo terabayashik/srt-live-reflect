@@ -6,25 +6,26 @@ endif
 TARGET   = srt-live-reflect
 DISTRO_ID := $(shell . /etc/os-release; echo $$ID)
 ifeq ($(DISTRO_ID),amzn)
-ifeq ($(UNAME_M),x86_64)
-INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
-LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
-LIBS     = /usr/lib64/libz.so.1
-else ifeq ($(UNAME_M),aarch64)
-INCDIR   = -I./src -I../vcpkg/installed/arm64-linux/include
-LIBDIR   = -L../vcpkg/installed/arm64-linux/lib/
-LIBS     = /usr/lib64/libz.so.1
-endif
+	ifeq ($(UNAME_M),x86_64)
+		INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
+		LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
+		LIBS     = /usr/lib64/libz.so.1
+	else ifeq ($(UNAME_M),aarch64)
+		INCDIR   = -I./src -I../vcpkg/installed/arm64-linux/include
+		LIBDIR   = -L../vcpkg/installed/arm64-linux/lib/
+		LIBS     = /usr/lib64/libz.so.1
+	endif
 else ifeq ($(DISTRO_ID),ubuntu)
-UNAME_M  := $(shell uname -m)
-ifeq ($(UNAME_M),x86_64)
-INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
-LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
-LIBS     = /usr/lib/x86_64-linux-gnu/libz.so.1
-else ifeq ($(UNAME_M),aarch64)
-INCDIR   = -I./src -I../vcpkg/installed/arm64-linux/include
-LIBDIR   = -L../vcpkg/installed/arm64-linux/lib/
-LIBS     = /usr/lib/aarch64-linux-gnu/libz.so.1
+	UNAME_M  := $(shell uname -m)
+	ifeq ($(UNAME_M),x86_64)
+		INCDIR   = -I./src -I../vcpkg/installed/x64-linux/include
+		LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
+		LIBS     = /usr/lib/x86_64-linux-gnu/libz.so.1
+	else ifeq ($(UNAME_M),aarch64)
+		INCDIR   = -I./src -I../vcpkg/installed/arm64-linux/include
+		LIBDIR   = -L../vcpkg/installed/arm64-linux/lib/
+		LIBS     = /usr/lib/aarch64-linux-gnu/libz.so.1
+	endif
 endif
 LIBS     := $(LIBS) -lsrt
 LIBS     := $(LIBS) -lboost_thread
