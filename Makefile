@@ -65,7 +65,7 @@ all: prepare $(TARGET)
 
 $(TARGET): $(OBJS)
 	. /etc/os-release
-	case $ID in
+	case $(ID) in
 	ubuntu)
 		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
 		;;
