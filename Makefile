@@ -64,17 +64,16 @@ OBJS     = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:.cpp=.o)))
 all: prepare $(TARGET)
 
 $(TARGET): $(OBJS)
-	. /etc/os-release
-	case $(ID) in
-	ubuntu)
+	case "$(DISTRO_ID)" in \
+	ubuntu) \
 		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS) -lz; \
-		;;
-	amzn)
+		;; \
+	amzn) \
 		$(CXX) $(CPPFLAGS) -o $(BINDIR)/$@ $^ $(LIBDIR) $(LIBS); \
-		;;
-	*)
-		echo "Unsupported distribution."
-		;;
+		;; \
+	*) \
+		echo "Unsupported distribution." \
+		;; \
 	esac
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
