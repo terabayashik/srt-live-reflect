@@ -12,9 +12,8 @@ ifeq ($(DISTRO_ID),amzn)
 		LIBDIR   = -L../vcpkg/installed/x64-linux/lib/
 		LIBS     = /usr/lib64/libz.so.1
 	else ifeq ($(UNAME_M),aarch64)
-		INCDIR   = -I./src -I../vcpkg/installed/arm64-linux/include
-		LIBDIR   = -L../vcpkg/installed/arm64-linux/lib/
-		LIBS     = /usr/lib64/libz.so.1
+		echo "Unsupported architecture."
+		false
 	endif
 else ifeq ($(DISTRO_ID),ubuntu)
 	ifeq ($(UNAME_M),x86_64)
